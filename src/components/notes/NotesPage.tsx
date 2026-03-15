@@ -1,0 +1,332 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../api/client';
+import { Note } from '../../api/types';
+import NoteEditor from './NoteEditor';
+import {
+  Plus, Search, Pin, Trash2, FolderPlus, Book, CheckSquare, Circle, CheckCircle2,
+  Calendar, PlayCircle, StickyNote, X,
+} from 'lucide-react';
+
+interface Notebook { id: number; name: string; icon: string; noteCount: number; }
+
+const statusIcons = [Circle, PlayCircle, CheckCircle2];
+const statusLabels = ['To Do', 'In Progress', 'Done'];
+const statusClasses = ['todo', 'in-progress', 'done'];
+
+export default function NotesPage() {
+  const qc = useQueryClient();
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [search, setSearch] = useState('');
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [activeNotebook, setActiveNotebook] = useState<number | null>(null);
+  const [view, setView] = useState<'all' | 'tasks' | 'notes' | 'done'>('all');
+  const [quickAdd, setQuickAdd] = useState('');
+  const [quickIsTask, setQuickIsTask] = useState(true);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  const [nbContextMenu, setNbContextMenu] = useState<{ x: number; y: number; id: number } | null>(null);
+  const [renamingNb, setRenamingNb] = useState<number | null>(null);
+  const [renameNbValue, setRenameNbValue] = useState('');
+  const renameNbRef = useRef<HTMLInputElement>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { data: notebooks = [] } = useQuery({
+    queryKey: ['notebooks'],
+    queryFn: () => api.get<Notebook[]>('/notes/notebooks'),
+  });
+
+  const { data: allNotes = [] } = useQuery({
+    queryKey: ['notes', search, activeNotebook],
+    queryFn: () => {
+      if (search) return api.get<Note[]>(`/notes/search?q=${encodeURIComponent(search)}`);
+      if (activeNotebook) return api.get<Note[]>(`/notes?notebookId=${activeNotebook}`);
+      return api.get<Note[]>('/notes');
+    },
+  });
+
+  // Filter by view
+  const notes = view === 'tasks' ? allNotes.filter(n => n.isTask && n.taskStatus !== 2)
+    : view === 'notes' ? allNotes.filter(n => !n.isTask)
+    : view === 'done' ? allNotes.filter(n => n.isTask && n.taskStatus === 2)
+    : allNotes.filter(n => !(n.isTask && n.taskStatus === 2)); // 'all' hides done
+
+  const active = allNotes.find(n => n.id === activeId);
+  const taskCount = allNotes.filter(n => n.isTask && n.taskStatus !== 2).length;
+  const doneCount = allNotes.filter(n => n.isTask && n.taskStatus === 2).length;
+
+  const selectNote = useCallback((note: Note) => {
+    setActiveId(note.id);
+    setTitle(note.title);
+    setContent(note.content);
+  }, []);
+
+  const autoSave = useCallback((newContent: string) => {
+    setContent(newContent);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (activeId) {
+        api.put(`/notes/${activeId}`, { content: newContent }).then(() =>
+          qc.invalidateQueries({ queryKey: ['notes'] })
+        );
+      }
+    }, 1000);
+  }, [activeId, qc]);
+
+  const autoSaveTitle = useCallback((newTitle: string) => {
+    setTitle(newTitle);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      if (activeId) {
+        api.put(`/notes/${activeId}`, { title: newTitle }).then(() =>
+          qc.invalidateQueries({ queryKey: ['notes'] })
+        );
+      }
+    }, 600);
+  }, [activeId, qc]);
+
+  // Quick add
+  const handleQuickAdd = () => {
+    if (!quickAdd.trim()) return;
+    api.post<Note>('/notes', {
+      title: quickAdd.trim(),
+      notebookId: activeNotebook || 1,
+      isTask: quickIsTask,
+    }).then(note => {
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['notebooks'] });
+      qc.invalidateQueries({ queryKey: ['nav-counts'] });
+      setQuickAdd('');
+    });
+  };
+
+  const cycleStatus = useMutation({
+    mutationFn: (id: number) => api.post<Note>(`/notes/${id}/cycle-status`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); },
+  });
+
+  const toggleTask = useMutation({
+    mutationFn: (id: number) => api.post<Note>(`/notes/${id}/toggle-task`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); },
+  });
+
+  const pinMutation = useMutation({
+    mutationFn: (id: number) => api.post(`/notes/${id}/pin`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notes'] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/notes/${id}`),
+    onSuccess: (_, id) => {
+      if (activeId === id) { setActiveId(null); setContent(''); }
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['nav-counts'] });
+    },
+  });
+
+  const addNotebookMutation = useMutation({
+    mutationFn: () => api.post<Notebook>('/notes/notebooks', { name: 'New Notebook' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notebooks'] }),
+  });
+
+  const renameNotebookMutation = useMutation({
+    mutationFn: ({ id, name }: { id: number; name: string }) => api.put(`/notes/notebooks/${id}`, { name }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['notebooks'] }),
+  });
+
+  const deleteNotebookMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/notes/notebooks/${id}`),
+    onSuccess: (_, id) => {
+      if (activeNotebook === id) setActiveNotebook(null);
+      qc.invalidateQueries({ queryKey: ['notebooks'] });
+      qc.invalidateQueries({ queryKey: ['notes'] });
+    },
+  });
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'n') { e.preventDefault(); document.querySelector<HTMLInputElement>('.quick-add-input')?.focus(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  useEffect(() => {
+    const handler = () => { setContextMenu(null); setNbContextMenu(null); };
+    window.addEventListener('click', handler);
+    return () => window.removeEventListener('click', handler);
+  }, []);
+
+  useEffect(() => {
+    if (renamingNb && renameNbRef.current) { renameNbRef.current.focus(); renameNbRef.current.select(); }
+  }, [renamingNb]);
+
+  return (
+    <div className="notes-layout">
+      {/* Notebooks sidebar */}
+      <div className="notebooks-panel">
+        <div style={{ padding: '10px 10px 6px' }}>
+          <div className="flex justify-between items-center">
+            <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>Lists</span>
+            <button className="ghost" onClick={() => addNotebookMutation.mutate()} style={{ padding: 2 }}><FolderPlus size={13} /></button>
+          </div>
+        </div>
+        <div className={`notebook-item ${activeNotebook === null ? 'active' : ''}`} onClick={() => setActiveNotebook(null)}>
+          <Book size={13} /> <span className="flex-1">All</span>
+          <span className="notebook-count">{allNotes.length}</span>
+        </div>
+        {notebooks.map(nb => (
+          <div
+            key={nb.id}
+            className={`notebook-item ${activeNotebook === nb.id ? 'active' : ''}`}
+            onClick={() => setActiveNotebook(nb.id)}
+            onContextMenu={e => { e.preventDefault(); setNbContextMenu({ x: e.clientX, y: e.clientY, id: nb.id }); }}
+          >
+            <Book size={13} />
+            {renamingNb === nb.id ? (
+              <input ref={renameNbRef} value={renameNbValue} onChange={e => setRenameNbValue(e.target.value)}
+                onBlur={() => { if (renameNbValue.trim()) renameNotebookMutation.mutate({ id: nb.id, name: renameNbValue.trim() }); setRenamingNb(null); }}
+                onKeyDown={e => { if (e.key === 'Enter') { renameNotebookMutation.mutate({ id: nb.id, name: renameNbValue.trim() }); setRenamingNb(null); } if (e.key === 'Escape') setRenamingNb(null); }}
+                onClick={e => e.stopPropagation()} style={{ flex: 1, fontSize: 12, padding: '1px 4px', minWidth: 0 }} />
+            ) : <span className="flex-1 truncate">{nb.name}</span>}
+            <span className="notebook-count">{nb.noteCount}</span>
+          </div>
+        ))}
+        {nbContextMenu && (
+          <div className="context-menu" style={{ top: nbContextMenu.y, left: nbContextMenu.x }} onClick={e => e.stopPropagation()}>
+            <button onClick={() => { const nb = notebooks.find(n => n.id === nbContextMenu.id); if (nb) { setRenamingNb(nb.id); setRenameNbValue(nb.name); } setNbContextMenu(null); }}>Rename</button>
+            {nbContextMenu.id !== 1 && <><hr /><button className="danger-item" onClick={() => { deleteNotebookMutation.mutate(nbContextMenu.id); setNbContextMenu(null); }}>Delete</button></>}
+          </div>
+        )}
+      </div>
+
+      {/* Main list */}
+      <div className="todo-list-panel">
+        {/* Quick add */}
+        <div className="todo-quick-add">
+          <button className={`todo-type-toggle ${quickIsTask ? 'task' : 'note'}`}
+            onClick={() => setQuickIsTask(!quickIsTask)} title={quickIsTask ? 'Adding task' : 'Adding note'}>
+            {quickIsTask ? <CheckSquare size={16} /> : <StickyNote size={16} />}
+          </button>
+          <input
+            className="quick-add-input"
+            placeholder={quickIsTask ? 'Add a task... (Ctrl+N)' : 'Add a note...'}
+            value={quickAdd}
+            onChange={e => setQuickAdd(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleQuickAdd(); }}
+          />
+          <button className="ghost" onClick={handleQuickAdd} disabled={!quickAdd.trim()} style={{ padding: '4px 8px' }}>
+            <Plus size={16} />
+          </button>
+        </div>
+
+        {/* View tabs */}
+        <div className="todo-tabs">
+          <button className={`todo-tab ${view === 'all' ? 'active' : ''}`} onClick={() => setView('all')}>All</button>
+          <button className={`todo-tab ${view === 'tasks' ? 'active' : ''}`} onClick={() => setView('tasks')}>
+            Tasks ({taskCount})
+          </button>
+          <button className={`todo-tab ${view === 'notes' ? 'active' : ''}`} onClick={() => setView('notes')}>Notes</button>
+          <button className={`todo-tab ${view === 'done' ? 'active' : ''}`} onClick={() => setView('done')}>Done ({doneCount})</button>
+          <div style={{ marginLeft: 'auto' }}>
+            <div className="notes-search" style={{ width: 160 }}>
+              <Search size={12} className="notes-search-icon" />
+              <input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} style={{ fontSize: 12, padding: '4px 4px 4px 26px' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Items */}
+        <div className="todo-list-scroll">
+          {notes.map(note => {
+            const StatusIcon = note.isTask ? statusIcons[note.taskStatus] : StickyNote;
+            const isActive = activeId === note.id;
+            return (
+              <div
+                key={note.id}
+                className={`todo-item ${isActive ? 'active' : ''} ${note.isTask && note.taskStatus === 2 ? 'done' : ''}`}
+                onClick={() => selectNote(note)}
+                onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, id: note.id }); }}
+              >
+                <button
+                  className={`todo-status ${note.isTask ? statusClasses[note.taskStatus] : 'note'}`}
+                  onClick={e => { e.stopPropagation(); if (note.isTask) cycleStatus.mutate(note.id); }}
+                  title={note.isTask ? statusLabels[note.taskStatus] : 'Note'}
+                >
+                  <StatusIcon size={18} />
+                </button>
+                <div className="todo-content">
+                  <div className="todo-title">{note.title || 'Untitled'}</div>
+                  <div className="todo-meta">
+                    {note.dueDate && <span className="todo-due"><Calendar size={10} /> {new Date(note.dueDate).toLocaleDateString()}</span>}
+                    {note.isPinned ? <Pin size={10} /> : null}
+                    {note.tags && <span className="todo-tags">{note.tags}</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {notes.length === 0 && <div className="text-muted text-small" style={{ padding: 24, textAlign: 'center' }}>
+            {search ? 'No matches' : view === 'done' ? 'No completed tasks' : 'Nothing here yet. Add one above!'}
+          </div>}
+        </div>
+      </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }} onClick={e => e.stopPropagation()}>
+          {(() => {
+            const note = allNotes.find(n => n.id === contextMenu.id);
+            return (<>
+              {note?.isTask && note.taskStatus === 2 && (
+                <button onClick={() => {
+                  api.put(`/notes/${contextMenu.id}`, { taskStatus: 0 }).then(() => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); });
+                  setContextMenu(null);
+                }}>Reopen task</button>
+              )}
+              <button onClick={() => { toggleTask.mutate(contextMenu.id); setContextMenu(null); }}>
+                {note?.isTask ? 'Convert to note' : 'Convert to task'}
+              </button>
+              <button onClick={() => { pinMutation.mutate(contextMenu.id); setContextMenu(null); }}>
+                {note?.isPinned ? 'Unpin' : 'Pin to top'}
+              </button>
+              <hr />
+              <button className="danger-item" onClick={() => { deleteMutation.mutate(contextMenu.id); setContextMenu(null); }}>Delete</button>
+            </>);
+          })()}
+        </div>
+      )}
+
+      {/* Detail pane */}
+      <div className="todo-detail-panel">
+        {active ? (
+          <>
+            <div className="todo-detail-header">
+              <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
+                {active.isTask && (
+                  <button className={`note-status-btn ${statusClasses[active.taskStatus]}`}
+                    onClick={() => cycleStatus.mutate(active.id)}>
+                    {statusLabels[active.taskStatus]}
+                  </button>
+                )}
+                {!active.isTask && <span className="badge" style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>Note</span>}
+                {active.isTask && (
+                  <div className="note-due-picker">
+                    <Calendar size={12} />
+                    <input type="date" value={active.dueDate || ''}
+                      onChange={e => { api.put(`/notes/${active.id}`, { dueDate: e.target.value || null }).then(() => qc.invalidateQueries({ queryKey: ['notes'] })); }} />
+                  </div>
+                )}
+                <button className="ghost" onClick={() => setActiveId(null)} style={{ marginLeft: 'auto' }}><X size={16} /></button>
+              </div>
+              <input className="note-title-input" value={title} onChange={e => autoSaveTitle(e.target.value)} placeholder="Untitled" />
+            </div>
+            <NoteEditor content={content} onChange={autoSave} />
+          </>
+        ) : (
+          <div className="note-editor-empty">Select an item to see details</div>
+        )}
+      </div>
+    </div>
+  );
+}
