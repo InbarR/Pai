@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/mascot.svg" alt="Pai mascot" width="160" />
+</p>
+
 # Pai - Personal AI Assistant
 
 A desktop AI assistant that lives in your sidebar. Manage tasks, notes, emails, files, reminders, and more — all through natural conversation or direct UI.

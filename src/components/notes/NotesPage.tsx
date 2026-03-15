@@ -28,6 +28,7 @@ export default function NotesPage() {
   const [nbContextMenu, setNbContextMenu] = useState<{ x: number; y: number; id: number } | null>(null);
   const [renamingNb, setRenamingNb] = useState<number | null>(null);
   const [renameNbValue, setRenameNbValue] = useState('');
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const renameNbRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -100,6 +101,56 @@ export default function NotesPage() {
     });
   };
 
+  // Drag and drop handler — create note from dropped data
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drop-active');
+    const json = e.dataTransfer.getData('application/json');
+    if (!json) return;
+    try {
+      const data = JSON.parse(json);
+      let title = '';
+      let content = '';
+      let isTask = true;
+
+      if (data.type === 'email') {
+        title = `RE: ${data.subject}`;
+        content = `<p><strong>From:</strong> ${data.from}</p><p><strong>Date:</strong> ${data.date}</p><hr><p>${data.preview || ''}</p>`;
+        isTask = true;
+      } else if (data.type === 'meeting' || data.type === 'event') {
+        title = data.subject || data.title || 'Meeting note';
+        content = `<p><strong>Meeting:</strong> ${data.subject || data.title}</p><p><strong>Time:</strong> ${data.start} - ${data.end}</p>${data.attendees ? `<p><strong>Attendees:</strong> ${data.attendees}</p>` : ''}<hr><p></p>`;
+        isTask = true;
+      } else if (data.type === 'file') {
+        title = data.title || data.name || 'File note';
+        content = `<p><strong>File:</strong> ${data.path || data.url || ''}</p><hr><p></p>`;
+        isTask = false;
+      }
+
+      if (title) {
+        api.post<Note>('/notes', {
+          title,
+          content,
+          notebookId: activeNotebook || 1,
+          isTask,
+        }).then(note => {
+          qc.invalidateQueries({ queryKey: ['notes'] });
+          qc.invalidateQueries({ queryKey: ['nav-counts'] });
+          selectNote(note);
+        });
+      }
+    } catch {}
+  }, [activeNotebook, qc]);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.currentTarget.classList.add('drop-active');
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.currentTarget.classList.remove('drop-active');
+  };
+
   const cycleStatus = useMutation({
     mutationFn: (id: number) => api.post<Note>(`/notes/${id}/cycle-status`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); },
@@ -146,10 +197,21 @@ export default function NotesPage() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'n') { e.preventDefault(); document.querySelector<HTMLInputElement>('.quick-add-input')?.focus(); }
+      // Delete key deletes selected or active note/task
+      if (e.key === 'Delete' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '')) {
+        if (selected.size > 0) {
+          selected.forEach(id => deleteMutation.mutate(id));
+          setSelected(new Set());
+          setActiveId(null);
+        } else if (activeId) {
+          deleteMutation.mutate(activeId);
+          setActiveId(null);
+        }
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [activeId, selected]);
 
   useEffect(() => {
     const handler = () => { setContextMenu(null); setNbContextMenu(null); };
@@ -201,16 +263,16 @@ export default function NotesPage() {
       </div>
 
       {/* Main list */}
-      <div className="todo-list-panel">
+      <div className="todo-list-panel" onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
         {/* Quick add */}
         <div className="todo-quick-add">
           <button className={`todo-type-toggle ${quickIsTask ? 'task' : 'note'}`}
-            onClick={() => setQuickIsTask(!quickIsTask)} title={quickIsTask ? 'Adding task' : 'Adding note'}>
+            onClick={() => setQuickIsTask(!quickIsTask)} title={quickIsTask ? 'Switch to note' : 'Switch to task'}>
             {quickIsTask ? <CheckSquare size={16} /> : <StickyNote size={16} />}
           </button>
           <input
             className="quick-add-input"
-            placeholder={quickIsTask ? 'Add a task... (Ctrl+N)' : 'Add a note...'}
+            placeholder={quickIsTask ? 'Add a task... (Ctrl+N) — click icon for note' : 'Add a note... — click icon for task'}
             value={quickAdd}
             onChange={e => setQuickAdd(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleQuickAdd(); }}
@@ -244,9 +306,26 @@ export default function NotesPage() {
             return (
               <div
                 key={note.id}
-                className={`todo-item ${isActive ? 'active' : ''} ${note.isTask && note.taskStatus === 2 ? 'done' : ''}`}
-                onClick={() => selectNote(note)}
-                onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, id: note.id }); }}
+                className={`todo-item ${isActive ? 'active' : ''} ${selected.has(note.id) ? 'selected' : ''} ${note.isTask && note.taskStatus === 2 ? 'done' : ''}`}
+                onClick={e => {
+                  if (e.ctrlKey || e.metaKey) {
+                    setSelected(prev => { const n = new Set(prev); n.has(note.id) ? n.delete(note.id) : n.add(note.id); return n; });
+                  } else if (selected.size > 0) {
+                    setSelected(new Set());
+                    selectNote(note);
+                  } else {
+                    selectNote(note);
+                  }
+                }}
+                onContextMenu={e => {
+                  e.preventDefault();
+                  if (selected.size > 0 && !selected.has(note.id)) {
+                    setSelected(prev => new Set(prev).add(note.id));
+                  } else if (selected.size === 0) {
+                    setSelected(new Set([note.id]));
+                  }
+                  setContextMenu({ x: e.clientX, y: e.clientY, id: note.id });
+                }}
               >
                 <button
                   className={`todo-status ${note.isTask ? statusClasses[note.taskStatus] : 'note'}`}
@@ -275,23 +354,31 @@ export default function NotesPage() {
       {/* Context menu */}
       {contextMenu && (
         <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }} onClick={e => e.stopPropagation()}>
-          {(() => {
+          {selected.size > 1 ? (
+            <>
+              <div style={{ padding: '4px 12px', fontSize: 11, color: 'var(--text-muted)' }}>{selected.size} selected</div>
+              <button className="danger-item" onClick={() => {
+                selected.forEach(id => deleteMutation.mutate(id));
+                setSelected(new Set()); setContextMenu(null); setActiveId(null);
+              }}>Delete {selected.size} items</button>
+            </>
+          ) : (() => {
             const note = allNotes.find(n => n.id === contextMenu.id);
             return (<>
               {note?.isTask && note.taskStatus === 2 && (
                 <button onClick={() => {
                   api.put(`/notes/${contextMenu.id}`, { taskStatus: 0 }).then(() => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); });
-                  setContextMenu(null);
+                  setContextMenu(null); setSelected(new Set());
                 }}>Reopen task</button>
               )}
-              <button onClick={() => { toggleTask.mutate(contextMenu.id); setContextMenu(null); }}>
+              <button onClick={() => { toggleTask.mutate(contextMenu.id); setContextMenu(null); setSelected(new Set()); }}>
                 {note?.isTask ? 'Convert to note' : 'Convert to task'}
               </button>
-              <button onClick={() => { pinMutation.mutate(contextMenu.id); setContextMenu(null); }}>
+              <button onClick={() => { pinMutation.mutate(contextMenu.id); setContextMenu(null); setSelected(new Set()); }}>
                 {note?.isPinned ? 'Unpin' : 'Pin to top'}
               </button>
               <hr />
-              <button className="danger-item" onClick={() => { deleteMutation.mutate(contextMenu.id); setContextMenu(null); }}>Delete</button>
+              <button className="danger-item" onClick={() => { deleteMutation.mutate(contextMenu.id); setContextMenu(null); setSelected(new Set()); }}>Delete</button>
             </>);
           })()}
         </div>
@@ -320,6 +407,13 @@ export default function NotesPage() {
                 <button className="ghost" onClick={() => setActiveId(null)} style={{ marginLeft: 'auto' }}><X size={16} /></button>
               </div>
               <input className="note-title-input" value={title} onChange={e => autoSaveTitle(e.target.value)} placeholder="Untitled" />
+            </div>
+            <div className="note-meta-bar">
+              {active.createdAt && <span>Created {new Date(active.createdAt).toLocaleDateString()} {new Date(active.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+              {active.updatedAt && active.updatedAt !== active.createdAt && (
+                <span>Modified {new Date(active.updatedAt).toLocaleDateString()} {new Date(active.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              )}
+              {active.sourceType && <span>Source: {active.sourceType}</span>}
             </div>
             <NoteEditor content={content} onChange={autoSave} />
           </>

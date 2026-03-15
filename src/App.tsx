@@ -13,6 +13,7 @@ import { useNotifications } from './hooks/useNotifications';
 import { X, Clock, CheckCircle2, MessageCircle } from 'lucide-react';
 import { api } from './api/client';
 import { useState, useEffect } from 'react';
+import CommandPalette from './components/CommandPalette';
 
 function parseSnoozeInput(input: string): number {
   const s = input.toLowerCase().trim();
@@ -53,34 +54,28 @@ export default function App() {
   // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Ctrl+Shift+P — command palette
+      if (e.ctrlKey && e.shiftKey && e.key === 'P') {
+        e.preventDefault();
+        setPaletteOpen(prev => !prev);
+      }
       // Ctrl+F — focus search input on current page
       if (e.ctrlKey && e.key === 'f') {
         e.preventDefault();
         const searchInput = document.querySelector('.notes-search input, .emails-list-header input, .quick-add-input') as HTMLInputElement;
         if (searchInput) searchInput.focus();
       }
-      // Alt+F — toggle between full window and sidecar
-      if (e.altKey && e.key === 'f') {
-        e.preventDefault();
-        window.dispatchEvent(new Event('pai-toggle-size'));
-      }
-      // Esc — in full mode: return to sidecar. In sidecar: hide
-      if (e.key === 'Escape' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '')) {
-        const pai = (window as any).pai;
-        if (pai?.isElectron) {
-          // Dispatch to let Layout handle mode switch
-          window.dispatchEvent(new Event('pai-esc'));
-        }
-      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [showSnoozeOptions, setShowSnoozeOptions] = useState(false);
   const [snoozeInput, setSnoozeInput] = useState('');
 
   return (
     <>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <Layout>
         <Routes>
           <Route path="/" element={<DashboardPage />} />

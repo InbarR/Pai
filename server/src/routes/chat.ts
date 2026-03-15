@@ -76,13 +76,16 @@ READ actions (query data):
 - {"type": "get_emails", "count": 10} — get recent emails
 - {"type": "get_calendar_today"} — get today's meetings
 - {"type": "get_calendar_upcoming", "days": 7} — get upcoming meetings
+- {"type": "get_email_body", "entryId": "..."} — get full body of a specific email (use entryId from search results)
+- {"type": "open_draft", "to": "email@...", "subject": "...", "body": "<html>...</html>", "cc": "email@..."} — compose a new email and open it in Outlook desktop app
 
-IMPORTANT RULES:
-- When the user asks to add/create something, ALWAYS include the ACTION block.
-- When the user asks about emails, calendar, or meetings — use the appropriate READ action.
+CRITICAL RULES:
+- When the user asks to add/create something, you MUST include the ACTION block immediately — never say "let me do that" without including the action.
+- When the user asks about emails, calendar, or meetings — you MUST use the appropriate READ action block immediately in your response. Do NOT say "let me search" or "one moment" without the ACTION block.
 - You can include MULTIPLE ACTION blocks in one response if needed.
-- After ACTION blocks, write a short friendly response about what you found/did.
-- Keep responses concise.`;
+- After ACTION blocks, write a short friendly response about what you did.
+- Keep responses concise. Always ACT, never just describe what you would do.
+- NEVER respond with "Let me..." or "I'll..." without an ACTION block. If the user asks you to do something, DO IT with an ACTION block.`;
 
 // Execute an action
 function executeAction(action: any): { success: boolean; message: string; data?: any } {
@@ -160,6 +163,18 @@ function executeAction(action: any): { success: boolean; message: string; data?:
         const days = action.days || 7;
         const events = runBridge(`calendar-upcoming ${days}`);
         return { success: true, message: `Found ${(events as any[]).length} upcoming events.`, data: events };
+      }
+      case 'get_email_body': {
+        const emailBody = runBridge(`email-body "${(action.entryId || '').replace(/"/g, '')}"`);
+        return { success: true, message: 'Email body retrieved.', data: emailBody };
+      }
+      case 'open_draft': {
+        const to = (action.to || '').replace(/"/g, '');
+        const subject = (action.subject || '').replace(/"/g, '');
+        const body = (action.body || '').replace(/"/g, '\\"');
+        const cc = (action.cc || '').replace(/"/g, '');
+        runBridge(`open-draft "${to}" "${subject}" "${body}" "${cc}"`);
+        return { success: true, message: 'Draft email opened in Outlook.' };
       }
       default:
         return { success: false, message: `Unknown action: ${action.type}` };
@@ -275,8 +290,21 @@ router.post('/stream', async (req: Request, res: Response) => {
     ];
 
     // For streaming, use non-streaming with action support as primary path
-    const rawReply = await chatCompletion(fullMessages, model);
+    let rawReply: string;
+    try {
+      rawReply = await chatCompletion(fullMessages, model);
+    } catch (err: any) {
+      // If selected model fails, fallback to gpt-4o
+      if (model !== 'gpt-4o') {
+        console.log(`[Chat] Model ${model} failed, falling back to gpt-4o: ${err.message}`);
+        rawReply = await chatCompletion(fullMessages, 'gpt-4o');
+      } else {
+        throw err;
+      }
+    }
+    console.log('[Chat] Raw AI reply:', rawReply.substring(0, 500));
     const { cleanedResponse, actions } = processActions(rawReply);
+    console.log('[Chat] Actions found:', actions.length, actions.map(a => a.type));
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
@@ -299,7 +327,18 @@ router.post('/stream', async (req: Request, res: Response) => {
         { role: 'system', content: `ACTION RESULTS:\n${dataContext}\n\nNow provide a helpful, concise summary to the user. No ACTION blocks.` },
       ];
 
-      finalReply = await chatCompletion(pass2Messages, model);
+      try {
+        finalReply = await chatCompletion(pass2Messages, model);
+        console.log('[Chat] Pass 2 reply:', finalReply.substring(0, 200));
+      } catch (err: any) {
+        console.log('[Chat] Pass 2 failed with', model, ':', err.message);
+        try {
+          finalReply = await chatCompletion(pass2Messages, 'gpt-4o');
+          console.log('[Chat] Pass 2 fallback reply:', finalReply.substring(0, 200));
+        } catch (err2: any) {
+          console.log('[Chat] Pass 2 fallback also failed:', err2.message);
+        }
+      }
     }
 
     // Send the complete response as streamed chunks (simulated)

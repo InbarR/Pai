@@ -1,0 +1,72 @@
+<svg width="200" height="200" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ambient glow -->
+  <circle cx="50" cy="50" r="42" fill="url(#glow)" opacity="0.2" />
+
+  <!-- Shadow -->
+  <ellipse cx="50" cy="92" rx="20" ry="3" fill="#6366f1" opacity="0.12" />
+
+  <!-- π crossbar — face/head -->
+  <rect x="18" y="24" width="64" height="26" rx="13" fill="url(#headGrad)" stroke="#6366f1" stroke-width="1.2" />
+
+  <!-- Left leg -->
+  <path d="M 34 50 L 32 82" stroke="url(#legGrad)" stroke-width="8" stroke-linecap="round" />
+
+  <!-- Right leg — curved -->
+  <path d="M 64 50 C 64 62, 68 74, 70 82" stroke="url(#legGrad)" stroke-width="8" stroke-linecap="round" fill="none" />
+
+  <!-- Feet -->
+  <ellipse cx="31" cy="84" rx="6" ry="3" fill="#4f46e5" />
+  <ellipse cx="71" cy="84" rx="6" ry="3" fill="#4f46e5" />
+
+  <!-- Left eye -->
+  <ellipse cx="38" cy="36" rx="6.5" ry="6" fill="#0e0e2a" />
+  <circle cx="38" cy="36" r="3.5" fill="#a5b4fc" />
+  <circle cx="39" cy="35" r="1.2" fill="white" opacity="0.4" />
+
+  <!-- Right eye -->
+  <ellipse cx="62" cy="36" rx="6.5" ry="6" fill="#0e0e2a" />
+  <circle cx="62" cy="36" r="3.5" fill="#a5b4fc" />
+  <circle cx="63" cy="35" r="1.2" fill="white" opacity="0.4" />
+
+  <!-- Smile -->
+  <path d="M 44 44 Q 50 49 56 44" stroke="#818cf8" stroke-width="1.8" stroke-linecap="round" fill="none" opacity="0.7" />
+
+  <!-- Cheeks -->
+  <circle cx="30" cy="40" r="3" fill="#818cf8" opacity="0.12" />
+  <circle cx="70" cy="40" r="3" fill="#818cf8" opacity="0.12" />
+
+  <!-- Headset band -->
+  <path d="M 22 30 C 22 14, 78 14, 78 30" stroke="#4f46e5" stroke-width="2.5" fill="none" stroke-linecap="round" />
+
+  <!-- Left earpiece -->
+  <rect x="17" y="28" width="6" height="9" rx="3" fill="#4f46e5" />
+
+  <!-- Right earpiece -->
+  <rect x="77" y="28" width="6" height="9" rx="3" fill="#4f46e5" />
+
+  <!-- Mic -->
+  <path d="M 20 37 C 17 42, 24 46, 30 45" stroke="#4f46e5" stroke-width="1.5" fill="none" stroke-linecap="round" />
+  <circle cx="30" cy="45" r="2.5" fill="#6366f1" />
+
+  <!-- Arms -->
+  <path d="M 30 58 C 22 55, 16 60, 18 65" stroke="#5558e6" stroke-width="3.5" stroke-linecap="round" fill="none" />
+  <circle cx="18" cy="65" r="2.8" fill="#6366f1" />
+
+  <path d="M 68 58 C 76 55, 82 60, 80 65" stroke="#5558e6" stroke-width="3.5" stroke-linecap="round" fill="none" />
+  <circle cx="80" cy="65" r="2.8" fill="#6366f1" />
+
+  <defs>
+    <linearGradient id="headGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2d2d7a" />
+      <stop offset="100%" stop-color="#1e1e5a" />
+    </linearGradient>
+    <linearGradient id="legGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="transparent" />
+    </radialGradient>
+  </defs>
+</svg>

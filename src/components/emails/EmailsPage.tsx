@@ -172,6 +172,14 @@ export default function EmailsPage() {
                 key={emailId}
                 className={`email-list-item ${selectedId === emailId ? 'active' : ''} ${email.isActioned ? 'actioned' : ''}`}
                 onClick={() => setSelectedId(emailId)}
+                draggable
+                onDragStart={e => {
+                  e.dataTransfer.setData('application/json', JSON.stringify({
+                    type: 'email', subject: email.subject, from: email.fromName,
+                    date: email.receivedAt, preview: email.aiSummary || email.bodyPreview,
+                  }));
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
               >
                 <div className="flex items-center gap-2" style={{ marginBottom: 2 }}>
                   {email.aiCategory && email.aiCategory !== 'fyi' && (

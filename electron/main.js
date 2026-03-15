@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, screen, globalShortcut, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, screen, globalShortcut, ipcMain, shell } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
@@ -47,6 +47,12 @@ function createWindow() {
     resizable: true,
   });
 
+  // Open external links in browser
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
   if (isDev) {
     mainWindow.loadURL(DEV_URL);
   } else {
@@ -88,8 +94,23 @@ function hideWindow() {
 }
 
 function toggleWindow() {
-  if (isVisible) hideWindow();
-  else showWindow();
+  if (isVisible) {
+    hideWindow();
+  } else {
+    // Always show as sidecar
+    snapToSide('right');
+    mainWindow.show();
+    mainWindow.focus();
+    isVisible = true;
+    // Tell renderer to switch to sidecar mode
+    mainWindow.webContents.executeJavaScript(`
+      window.dispatchEvent(new Event('pai-force-sidecar'));
+      setTimeout(() => {
+        const input = document.querySelector('.chat-input-bar textarea');
+        if (input) input.focus();
+      }, 150);
+    `).catch(() => {});
+  }
 }
 
 // Pop up and FORCE to front (for notifications)
@@ -107,6 +128,7 @@ function popUp() {
 }
 
 function snapToSide(side) {
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
   const { x: workX, y: workY } = primaryDisplay.workArea;
@@ -206,12 +228,8 @@ ipcMain.handle('save-settings', (_, settings) => {
 
 ipcMain.handle('window-maximize', () => {
   if (!mainWindow) return;
-  if (mainWindow.isMaximized()) {
-    mainWindow.unmaximize();
-  } else {
-    mainWindow.maximize();
-  }
-  return { maximized: mainWindow.isMaximized() };
+  mainWindow.maximize();
+  return { maximized: true };
 });
 
 ipcMain.handle('window-hide', () => {

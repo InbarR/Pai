@@ -192,7 +192,13 @@ export default function DashboardPage() {
             <ArrowRight size={16} />
           </div>
           {data.recentEmails.map(e => (
-            <div key={e.id} className="focus-item">
+            <div key={e.id} className="focus-item" draggable
+              onDragStart={ev => {
+                ev.dataTransfer.setData('application/json', JSON.stringify({
+                  type: 'email', subject: e.subject, from: e.fromName, preview: '',
+                }));
+                ev.dataTransfer.effectAllowed = 'copy';
+              }}>
               <Mail size={14} className="focus-icon" />
               <div className="focus-content">
                 <span className="focus-title">{e.subject}</span>

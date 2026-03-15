@@ -207,8 +207,11 @@ export default function ChatPanel() {
     // If already streaming, stop it first
     if (streaming) stopStreaming();
 
-    // Add to prompt history
-    setPromptHistory(prev => [text, ...prev.filter(p => p !== text)]);
+    // Add to prompt history (most recent first, deduplicated)
+    setPromptHistory(prev => {
+      const updated = [text, ...prev.filter(p => p !== text)];
+      return updated.slice(0, 100); // cap at 100
+    });
     setPromptIdx(-1);
 
     const now = new Date().toISOString();
@@ -327,12 +330,16 @@ export default function ChatPanel() {
       sendMessage();
     }
     // Up arrow cycles through prompt history
-    if (e.key === 'ArrowUp' && !input && promptHistory.length > 0) {
-      e.preventDefault();
-      const newIdx = promptIdx + 1;
-      if (newIdx < promptHistory.length) {
-        setPromptIdx(newIdx);
-        setInput(promptHistory[newIdx]);
+    if (e.key === 'ArrowUp' && promptHistory.length > 0) {
+      const textarea = e.target as HTMLTextAreaElement;
+      // Only cycle history when cursor is at the start (or input is empty)
+      if (textarea.selectionStart === 0 || !input || promptIdx >= 0) {
+        e.preventDefault();
+        const newIdx = promptIdx + 1;
+        if (newIdx < promptHistory.length) {
+          setPromptIdx(newIdx);
+          setInput(promptHistory[newIdx]);
+        }
       }
     }
     if (e.key === 'ArrowDown' && promptIdx >= 0) {

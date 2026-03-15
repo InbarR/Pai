@@ -65,6 +65,15 @@ class Program
                     int searchCount = args.Length > 2 && int.TryParse(args[2], out var sc) ? sc : 20;
                     Console.Write(SearchEmails(ns, query, searchCount));
                     break;
+                case "open-draft":
+                    // args: open-draft "to" "subject" "htmlBody" ["cc"]
+                    string to = args.Length > 1 ? args[1] : "";
+                    string subject = args.Length > 2 ? args[2] : "";
+                    string body = args.Length > 3 ? args[3] : "";
+                    string cc = args.Length > 4 ? args[4] : "";
+                    OpenDraft(app, to, subject, body, cc);
+                    Console.Write(JsonSerializer.Serialize(new { success = true, message = "Draft opened in Outlook" }, JsonOpts));
+                    break;
                 default:
                     Console.Error.WriteLine("Unknown command: " + args[0]);
                     return 1;
@@ -133,6 +142,16 @@ class Program
             }
         }
         catch { }
+    }
+
+    static void OpenDraft(Application app, string to, string subject, string htmlBody, string cc)
+    {
+        var mail = (MailItem)app.CreateItem(OlItemType.olMailItem);
+        if (!string.IsNullOrEmpty(to)) mail.To = to;
+        if (!string.IsNullOrEmpty(cc)) mail.CC = cc;
+        if (!string.IsNullOrEmpty(subject)) mail.Subject = subject;
+        if (!string.IsNullOrEmpty(htmlBody)) mail.HTMLBody = htmlBody;
+        mail.Display(false); // Opens the compose window
     }
 
     static string SearchEmails(NameSpace ns, string query, int count)
