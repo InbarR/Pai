@@ -19,8 +19,13 @@ interface ChatSession {
 
 export default function ChatPanel() {
   const qc = useQueryClient();
-  const [sessionId, setSessionId] = useState<number | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [sessionId, setSessionId] = useState<number | null>(() => {
+    const saved = sessionStorage.getItem('pai-session-id');
+    return saved ? parseInt(saved) : null;
+  });
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try { return JSON.parse(sessionStorage.getItem('pai-messages') || '[]'); } catch { return []; }
+  });
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -94,6 +99,17 @@ export default function ChatPanel() {
     return () => window.removeEventListener('keydown', handler, true);
   }, []);
 
+  // Persist chat state to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem('pai-messages', JSON.stringify(
+      messages
+        .filter(m => m.content !== ':::thinking:::' && !m.content.startsWith(':::status:::'))
+    ));
+  }, [messages]);
+  useEffect(() => {
+    if (sessionId) sessionStorage.setItem('pai-session-id', String(sessionId));
+  }, [sessionId]);
+
   // Load prompt history from all sessions on mount
   useEffect(() => {
     loadPromptHistory();
@@ -130,6 +146,8 @@ export default function ChatPanel() {
     setSessionId(null);
     setMessages([]);
     setShowHistory(false);
+    sessionStorage.removeItem('pai-messages');
+    sessionStorage.removeItem('pai-session-id');
     inputRef.current?.focus();
   }
 
@@ -264,6 +282,14 @@ export default function ChatPanel() {
             if (data === '[DONE]') continue;
             try {
               const parsed = JSON.parse(data);
+              if (parsed.status) {
+                // Show status as thinking indicator
+                setMessages(prev => {
+                  const copy = [...prev];
+                  copy[copy.length - 1] = { role: 'assistant', content: `:::status:::${parsed.status}`, timestamp: new Date().toISOString() };
+                  return copy;
+                });
+              }
               if (parsed.content) {
                 assistantMsg += parsed.content;
                 setMessages(prev => {
@@ -480,7 +506,8 @@ export default function ChatPanel() {
 
         {messages.map((msg, i) => {
           // Thinking indicator
-          if (msg.content === ':::thinking:::') {
+          if (msg.content === ':::thinking:::' || msg.content.startsWith(':::status:::')) {
+            const statusText = msg.content.startsWith(':::status:::') ? msg.content.slice(12) : 'Thinking...';
             return (
               <div key={i} className="chat-bubble assistant">
                 <div className="chat-avatar">
@@ -490,7 +517,7 @@ export default function ChatPanel() {
                   <div className="thinking-dots">
                     <span /><span /><span />
                   </div>
-                  <span className="thinking-label">Thinking...</span>
+                  <span className="thinking-label">{statusText}</span>
                 </div>
               </div>
             );

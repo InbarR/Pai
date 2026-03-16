@@ -1,5 +1,5 @@
 import { ReactNode, useState, useEffect, useCallback } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import {
@@ -15,6 +15,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [chatOpen, setChatOpen] = useState(true);
   const [width, setWidth] = useState(window.innerWidth);
   const location = useLocation();
+  const navigate = useNavigate();
 
   const isSidecar = width < SIDECAR_THRESHOLD;
 
@@ -38,6 +39,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   // Keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Alt+F — toggle sidecar/full
       if (e.altKey && e.key === 'f') {
         e.preventDefault();
         if (window.innerWidth < SIDECAR_THRESHOLD) {
@@ -46,6 +48,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           try { (window as any).pai?.sidecar?.('right'); } catch {}
         }
       }
+      // Esc — full→sidecar, sidecar→hide
       if (e.key === 'Escape' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '')) {
         if (window.innerWidth >= SIDECAR_THRESHOLD) {
           try { (window as any).pai?.sidecar?.('right'); } catch {}
@@ -53,10 +56,22 @@ export default function Layout({ children }: { children: ReactNode }) {
           try { (window as any).pai?.hide?.(); } catch {}
         }
       }
+      // Alt+1..7 — navigate to sections (goes to full mode)
+      if (e.altKey && !e.ctrlKey && !e.shiftKey) {
+        const routes = ['/', '/notes', '/files', '/people', '/emails', '/reminders', '/reading'];
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= routes.length) {
+          e.preventDefault();
+          navigate(routes[num - 1]);
+          if (window.innerWidth < SIDECAR_THRESHOLD) {
+            try { (window as any).pai?.maximize?.(); } catch {}
+          }
+        }
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [navigate]);
 
   // Force sidecar from Electron (Ctrl+2)
   useEffect(() => {
@@ -78,8 +93,9 @@ export default function Layout({ children }: { children: ReactNode }) {
       const emails = await api.get<any[]>('/emails');
       const reading = await api.get<any[]>('/reading?unreadOnly=true');
       const notes = await api.get<any[]>('/notes');
+      const openTasks = notes.filter((n: any) => !(n.isTask && n.taskStatus === 2)).length;
       return {
-        notes: notes.length,
+        notes: openTasks,
         emails: emails.length,
         reminders: d.activeReminderCount,
         reading: reading.length,
@@ -117,12 +133,13 @@ export default function Layout({ children }: { children: ReactNode }) {
           <ChatPanel />
         </div>
         <div className="chat-mode-nav">
-          {navItems.map(({ to, label, icon: Icon, count }) => (
-            <NavLink key={to} to={to} end={to === '/'} title={label}
+          {navItems.map(({ to, label, icon: Icon, count }, idx) => (
+            <NavLink key={to} to={to} end={to === '/'} title={`${label} (Alt+${idx + 1})`}
               className={({ isActive }) => `chat-nav-item ${isActive && to !== '/' ? 'active' : ''}`}
               onClick={goFull}>
               <Icon size={16} />
               {count > 0 && <span className="chat-nav-count">{count}</span>}
+              <span className="chat-nav-hint">({idx + 1})</span>
             </NavLink>
           ))}
           <NavLink to="/settings" className={({ isActive }) => `chat-nav-item ${isActive ? 'active' : ''}`}
@@ -143,9 +160,10 @@ export default function Layout({ children }: { children: ReactNode }) {
           <h1>Pai</h1>
         </div>
         <nav>
-          {navItems.map(({ to, label, icon: Icon, count }) => (
-            <NavLink key={to} to={to} end={to === '/'} title={label}
+          {navItems.map(({ to, label, icon: Icon, count }, idx) => (
+            <NavLink key={to} to={to} end={to === '/'} title={`${label} (Alt+${idx + 1})`}
               className={({ isActive }) => isActive ? 'active' : ''}>
+              <span className="nav-shortcut">[{idx + 1}]</span>
               <Icon size={18} />
               <span>{label}</span>
               {count > 0 && <span className="nav-count">{count}</span>}

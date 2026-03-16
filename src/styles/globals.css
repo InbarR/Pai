@@ -178,6 +178,7 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
 
 .sidebar:hover .nav-count,
 .sidebar.pinned .nav-count { opacity: 1; }
+.nav-shortcut { font-size: 9px; color: var(--text-muted); opacity: 0.4; min-width: 16px; }
 
 .sidebar a:hover { background: var(--bg-hover); color: var(--text-primary); }
 
@@ -1495,6 +1496,14 @@ label.checkbox input[type="checkbox"] {
   font-weight: 700;
   line-height: 14px;
 }
+.chat-nav-hint {
+  font-size: 8px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+}
 
 /* ===== Chat sidebar (right panel) ===== */
 .chat-sidebar {
@@ -2046,6 +2055,22 @@ label.checkbox input[type="checkbox"] {
   color: white;
   transform: none;
 }
+
+.join-btn {
+  background: #28a745 !important; color: white !important; border-color: #28a745 !important;
+  font-weight: 600;
+}
+.join-btn:hover { background: #22903d !important; }
+
+.pai-companion-links {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 14px 10px;
+}
+.meeting-link {
+  font-size: 11px; color: var(--accent); text-decoration: none;
+  padding: 3px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.meeting-link:hover { text-decoration: underline; }
 
 .pai-bubble-snooze {
   margin-top: 8px;

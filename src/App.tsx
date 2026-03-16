@@ -108,16 +108,38 @@ export default function App() {
             </button>
           </div>
           <div className="pai-companion-actions">
-            <button onClick={() => setShowSnoozeOptions(!showSnoozeOptions)}>
-              <Clock size={12} /> Snooze
-            </button>
+            {bubble.joinUrl && (
+              <button className="join-btn" onClick={() => { window.open(bubble.joinUrl, '_blank'); }}>
+                Join Meeting
+              </button>
+            )}
+            {bubble.reminderId && (
+              <button onClick={() => setShowSnoozeOptions(!showSnoozeOptions)}>
+                <Clock size={12} /> Snooze
+              </button>
+            )}
             <button onClick={() => {
               if (bubble.reminderId) api.post(`/reminders/${bubble.reminderId}/dismiss`);
               dismissBubble(); setShowSnoozeOptions(false);
             }}>
-              <CheckCircle2 size={12} /> Done
+              <CheckCircle2 size={12} /> {bubble.reminderId ? 'Done' : 'Dismiss'}
             </button>
           </div>
+          {bubble.links && bubble.links.length > 0 && (
+            <div className="pai-companion-links">
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Links from agenda</span>
+              {bubble.links.map((url, i) => {
+                const label = (() => {
+                  try { const u = new URL(url); return u.hostname + (u.pathname.length > 1 ? u.pathname.substring(0, 30) : ''); } catch { return url.substring(0, 40); }
+                })();
+                return (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="meeting-link">
+                    {label}
+                  </a>
+                );
+              })}
+            </div>
+          )}
           {showSnoozeOptions && (
             <div className="pai-companion-snooze">
               <input

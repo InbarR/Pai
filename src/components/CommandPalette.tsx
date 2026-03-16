@@ -52,6 +52,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
           qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] });
         });
         onClose();
+        go('/notes');
       }});
     }},
     { id: 'new-note', label: 'New Note', icon: Plus, category: 'action', action: () => {
@@ -61,6 +62,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
           qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] });
         });
         onClose();
+        go('/notes');
       }});
     }},
     { id: 'search-emails', label: 'Search Emails', icon: Search, category: 'action', action: () => { go('/emails'); setTimeout(() => { const input = document.querySelector('.emails-list-header input') as HTMLInputElement; if (input) input.focus(); }, 200); } },

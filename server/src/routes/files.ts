@@ -6,14 +6,26 @@ const router = Router();
 
 let cachedOpen: ScannedDoc[] = [];
 let cachedRecent: ScannedDoc[] = [];
-let lastScanTime = 0;
+let lastOpenScan = 0;
+let lastRecentScan = 0;
+
+// Auto-scan on startup
+setTimeout(async () => {
+  try {
+    cachedOpen = await scanOpenDocs();
+    lastOpenScan = Date.now();
+    cachedRecent = await scanRecentDocs();
+    lastRecentScan = Date.now();
+    console.log(`[Files] Startup scan: ${cachedOpen.length} open, ${cachedRecent.length} recent`);
+  } catch {}
+}, 3000);
 
 router.get('/open', async (req, res) => {
   try {
     // Cache for 10 seconds
-    if (Date.now() - lastScanTime > 10_000) {
+    if (Date.now() - lastOpenScan > 10_000) {
       cachedOpen = await scanOpenDocs();
-      lastScanTime = Date.now();
+      lastOpenScan = Date.now();
     }
     res.json(cachedOpen);
   } catch (err: any) {
@@ -23,7 +35,11 @@ router.get('/open', async (req, res) => {
 
 router.get('/recent', async (req, res) => {
   try {
-    cachedRecent = await scanRecentDocs();
+    // Cache for 60 seconds
+    if (Date.now() - lastRecentScan > 60_000) {
+      cachedRecent = await scanRecentDocs();
+      lastRecentScan = Date.now();
+    }
     res.json(cachedRecent);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

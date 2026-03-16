@@ -225,6 +225,20 @@ class Program
                 }
                 catch { }
 
+                // Extract join URL from body
+                string joinUrl = "";
+                string body = Safe(() => appt.Body) ?? "";
+                foreach (var pattern in new[] { "https://teams.microsoft.com/l/meetup-join/", "https://teams.live.com/meet/", "https://zoom.us/j/", "https://meet.google.com/" })
+                {
+                    int idx2 = body.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
+                    if (idx2 >= 0)
+                    {
+                        int endIdx = body.IndexOfAny(new[] { ' ', '\n', '\r', '"', '<', '>' }, idx2);
+                        joinUrl = endIdx > idx2 ? body.Substring(idx2, endIdx - idx2) : body.Substring(idx2);
+                        break;
+                    }
+                }
+
                 results.Add(new
                 {
                     subject = Safe(() => appt.Subject) ?? "",
@@ -232,7 +246,8 @@ class Program
                     end = et.ToString("o"),
                     organizer = Safe(() => appt.Organizer) ?? "",
                     location = Safe(() => appt.Location) ?? "",
-                    isOnline = (Safe(() => appt.Location) ?? "").Contains("Teams"),
+                    isOnline = !string.IsNullOrEmpty(joinUrl) || (Safe(() => appt.Location) ?? "").Contains("Teams"),
+                    joinUrl,
                     attendeeCount = attendees.Count,
                     attendees = attendees.Take(10).ToList()
                 });

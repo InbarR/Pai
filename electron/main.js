@@ -71,6 +71,14 @@ function createWindow() {
       hideWindow();
     }
   });
+
+  // Re-assert always-on-top when in sidecar mode and window loses focus
+  mainWindow.on('blur', () => {
+    if (mainWindow && mainWindow.isAlwaysOnTop()) {
+      // Re-show to keep it visible above other windows
+      mainWindow.setAlwaysOnTop(true, 'pop-up-menu');
+    }
+  });
 }
 
 function showWindow() {
@@ -136,6 +144,7 @@ function snapToSide(side) {
 
   const x = side === 'left' ? workX : workX + screenW - winWidth;
   mainWindow.setBounds({ x, y: workY, width: winWidth, height: screenH });
+  mainWindow.setAlwaysOnTop(true, 'pop-up-menu');
   showWindow();
 }
 
@@ -228,6 +237,7 @@ ipcMain.handle('save-settings', (_, settings) => {
 
 ipcMain.handle('window-maximize', () => {
   if (!mainWindow) return;
+  mainWindow.setAlwaysOnTop(false);
   mainWindow.maximize();
   return { maximized: true };
 });

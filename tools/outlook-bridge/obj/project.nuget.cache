@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "2sh7VGnh1YU=",
+  "dgSpecHash": "dx4NDWFVopw=",
   "success": true,
-  "projectFilePath": "C:\\projects\\personal-assistant\\tools\\outlook-bridge\\outlook-bridge.csproj",
+  "projectFilePath": "C:\\projects\\pai\\tools\\outlook-bridge\\outlook-bridge.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\inrotem\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\8.0.0\\microsoft.bcl.asyncinterfaces.8.0.0.nupkg.sha512",
     "C:\\Users\\inrotem\\.nuget\\packages\\microsoft.office.interop.outlook\\15.0.4797.1003\\microsoft.office.interop.outlook.15.0.4797.1003.nupkg.sha512",

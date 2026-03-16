@@ -5,7 +5,7 @@ import { Note } from '../../api/types';
 import NoteEditor from './NoteEditor';
 import {
   Plus, Search, Pin, Trash2, FolderPlus, Book, CheckSquare, Circle, CheckCircle2,
-  Calendar, PlayCircle, StickyNote, X,
+  Calendar, PlayCircle, StickyNote, X, Upload,
 } from 'lucide-react';
 
 interface Notebook { id: number; name: string; icon: string; noteCount: number; }
@@ -29,6 +29,11 @@ export default function NotesPage() {
   const [renamingNb, setRenamingNb] = useState<number | null>(null);
   const [renameNbValue, setRenameNbValue] = useState('');
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [showOneNote, setShowOneNote] = useState(false);
+  const [oneNoteBooks, setOneNoteBooks] = useState<any[]>([]);
+  const [oneNotePages, setOneNotePages] = useState<any[]>([]);
+  const [oneNoteSectionId, setOneNoteSectionId] = useState<string | null>(null);
+  const [importingPages, setImportingPages] = useState<Set<string>>(new Set());
   const renameNbRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -151,6 +156,27 @@ export default function NotesPage() {
     e.currentTarget.classList.remove('drop-active');
   };
 
+  // Import from file (HTML, TXT, or OneNote export)
+  const handleImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.html,.htm,.txt,.md';
+    input.multiple = true;
+    input.onchange = async () => {
+      if (!input.files) return;
+      for (const file of Array.from(input.files)) {
+        const text = await file.text();
+        const title = file.name.replace(/\.(html?|txt|md)$/i, '');
+        const isHtml = /\.html?$/i.test(file.name);
+        const content = isHtml ? text : `<p>${text.replace(/\n/g, '</p><p>')}</p>`;
+        await api.post('/notes', { title, content, notebookId: activeNotebook || 1, isTask: false });
+      }
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['nav-counts'] });
+    };
+    input.click();
+  };
+
   const cycleStatus = useMutation({
     mutationFn: (id: number) => api.post<Note>(`/notes/${id}/cycle-status`),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); },
@@ -235,7 +261,7 @@ export default function NotesPage() {
         </div>
         <div className={`notebook-item ${activeNotebook === null ? 'active' : ''}`} onClick={() => setActiveNotebook(null)}>
           <Book size={13} /> <span className="flex-1">All</span>
-          <span className="notebook-count">{allNotes.length}</span>
+          <span className="notebook-count">{allNotes.filter(n => !(n.isTask && n.taskStatus === 2)).length}</span>
         </div>
         {notebooks.map(nb => (
           <div
@@ -279,6 +305,18 @@ export default function NotesPage() {
           />
           <button className="ghost" onClick={handleQuickAdd} disabled={!quickAdd.trim()} style={{ padding: '4px 8px' }}>
             <Plus size={16} />
+          </button>
+          <button className="ghost" onClick={handleImport} title="Import from file" style={{ padding: '4px 8px' }}>
+            <Upload size={16} />
+          </button>
+          <button className="ghost" onClick={async () => {
+            setShowOneNote(true);
+            try {
+              const books = await api.get<any[]>('/notes/onenote/notebooks');
+              setOneNoteBooks(books);
+            } catch { setOneNoteBooks([]); }
+          }} title="Import from OneNote" style={{ padding: '4px 8px' }}>
+            <Book size={16} />
           </button>
         </div>
 
@@ -421,6 +459,68 @@ export default function NotesPage() {
           <div className="note-editor-empty">Select an item to see details</div>
         )}
       </div>
+
+      {/* OneNote import dialog */}
+      {showOneNote && (
+        <div className="palette-overlay" onClick={() => { setShowOneNote(false); setOneNotePages([]); setOneNoteSectionId(null); }}>
+          <div className="palette" onClick={e => e.stopPropagation()} style={{ maxHeight: 500 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>Import from OneNote</span>
+              <button className="ghost" onClick={() => { setShowOneNote(false); setOneNotePages([]); setOneNoteSectionId(null); }}><X size={14} /></button>
+            </div>
+            <div style={{ maxHeight: 400, overflowY: 'auto', padding: '8px 0' }}>
+              {!oneNoteSectionId ? (
+                // Show notebooks & sections
+                oneNoteBooks.length === 0 ? (
+                  <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                    Loading OneNote notebooks... (OneNote must be installed)
+                  </div>
+                ) : oneNoteBooks.map((nb: any) => (
+                  <div key={nb.id}>
+                    <div style={{ padding: '8px 16px', fontWeight: 600, fontSize: 12, color: 'var(--accent)', textTransform: 'uppercase' }}>{nb.name}</div>
+                    {(nb.sections || []).map((sec: any) => (
+                      <div key={sec.id} className="palette-item" onClick={async () => {
+                        setOneNoteSectionId(sec.id);
+                        const pages = await api.get<any[]>(`/notes/onenote/pages/${encodeURIComponent(sec.id)}`);
+                        setOneNotePages(pages);
+                      }}>
+                        <Book size={14} />
+                        <span>{sec.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))
+              ) : (
+                // Show pages in selected section
+                <>
+                  <div className="palette-item" onClick={() => { setOneNoteSectionId(null); setOneNotePages([]); }}
+                    style={{ color: 'var(--accent)', fontSize: 12 }}>
+                    &larr; Back to notebooks
+                  </div>
+                  {oneNotePages.map((page: any) => (
+                    <div key={page.id} className="palette-item" onClick={async () => {
+                      if (importingPages.has(page.id)) return;
+                      setImportingPages(prev => new Set(prev).add(page.id));
+                      await api.post('/notes/onenote/import', { pageId: page.id, notebookId: activeNotebook || 1 });
+                      qc.invalidateQueries({ queryKey: ['notes'] });
+                      qc.invalidateQueries({ queryKey: ['nav-counts'] });
+                    }}>
+                      <span style={{ flex: 1 }}>{page.name}</span>
+                      {importingPages.has(page.id)
+                        ? <span style={{ fontSize: 11, color: 'var(--accent)' }}>Imported!</span>
+                        : <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Click to import</span>
+                      }
+                    </div>
+                  ))}
+                  {oneNotePages.length === 0 && (
+                    <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No pages found</div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

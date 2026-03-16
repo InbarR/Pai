@@ -85,7 +85,9 @@ CRITICAL RULES:
 - You can include MULTIPLE ACTION blocks in one response if needed.
 - After ACTION blocks, write a short friendly response about what you did.
 - Keep responses concise. Always ACT, never just describe what you would do.
-- NEVER respond with "Let me..." or "I'll..." without an ACTION block. If the user asks you to do something, DO IT with an ACTION block.`;
+- NEVER respond with "Let me..." or "I'll..." without an ACTION block. If the user asks you to do something, DO IT with an ACTION block.
+- When showing calendar/meeting info, if a meeting has a joinUrl, format it as: **[Meeting Name](joinUrl)** so it's clickable. Always include the join link.
+- Support Hebrew and English — respond in the same language the user used.`;
 
 // Execute an action
 function executeAction(action: any): { success: boolean; message: string; data?: any } {
@@ -289,14 +291,26 @@ router.post('/stream', async (req: Request, res: Response) => {
       ...messages,
     ];
 
-    // For streaming, use non-streaming with action support as primary path
+    // Start streaming immediately so user sees progress
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    });
+
+    const sendStatus = (status: string) => {
+      res.write(`data: ${JSON.stringify({ status })}\n\n`);
+    };
+
+    sendStatus(`Asking ${model}...`);
+
+    // Pass 1: get AI response (may contain ACTION blocks)
     let rawReply: string;
     try {
       rawReply = await chatCompletion(fullMessages, model);
     } catch (err: any) {
-      // If selected model fails, fallback to gpt-4o
       if (model !== 'gpt-4o') {
-        console.log(`[Chat] Model ${model} failed, falling back to gpt-4o: ${err.message}`);
+        sendStatus(`${model} failed, trying gpt-4o...`);
         rawReply = await chatCompletion(fullMessages, 'gpt-4o');
       } else {
         throw err;
@@ -306,17 +320,19 @@ router.post('/stream', async (req: Request, res: Response) => {
     const { cleanedResponse, actions } = processActions(rawReply);
     console.log('[Chat] Actions found:', actions.length, actions.map(a => a.type));
 
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    });
+    if (actions.length > 0) {
+      sendStatus(`Running: ${actions.map(a => a.type.replace(/_/g, ' ')).join(', ')}...`);
+    }
 
     // Check if any READ actions returned data — do a second pass
     const readResults = actions.filter(a => a.result?.data && Array.isArray(a.result.data) && a.result.data.length > 0);
     let finalReply = cleanedResponse;
 
     if (readResults.length > 0) {
+      // Show what actions ran
+      const actionNames = actions.map(a => a.type.replace(/_/g, ' ')).join(', ');
+      sendStatus(`Ran: ${actionNames}. Summarizing...`);
+
       const dataContext = readResults.map(a =>
         `Results for ${a.type}${a.query ? ` "${a.query}"` : ''}:\n${JSON.stringify(a.result.data, null, 2)}`
       ).join('\n\n');
@@ -334,11 +350,16 @@ router.post('/stream', async (req: Request, res: Response) => {
         console.log('[Chat] Pass 2 failed with', model, ':', err.message);
         try {
           finalReply = await chatCompletion(pass2Messages, 'gpt-4o');
-          console.log('[Chat] Pass 2 fallback reply:', finalReply.substring(0, 200));
         } catch (err2: any) {
           console.log('[Chat] Pass 2 fallback also failed:', err2.message);
+          // Use Pass 1 cleaned text + raw data summary as fallback
+          const dataSummary = readResults.map(a => `${a.type}: ${a.result.message}`).join('\n');
+          finalReply = cleanedResponse + '\n\n' + dataSummary;
         }
       }
+    } else if (actions.length > 0) {
+      const actionNames = actions.map(a => `${a.type}: ${a.result?.message || 'done'}`).join(', ');
+      sendStatus(actionNames);
     }
 
     // Send the complete response as streamed chunks (simulated)

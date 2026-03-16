@@ -728,11 +728,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\projects\\personal-assistant\\tools\\outlook-bridge\\outlook-bridge.csproj",
+      "projectUniqueName": "C:\\projects\\pai\\tools\\outlook-bridge\\outlook-bridge.csproj",
       "projectName": "outlook-bridge",
-      "projectPath": "C:\\projects\\personal-assistant\\tools\\outlook-bridge\\outlook-bridge.csproj",
+      "projectPath": "C:\\projects\\pai\\tools\\outlook-bridge\\outlook-bridge.csproj",
       "packagesPath": "C:\\Users\\inrotem\\.nuget\\packages\\",
-      "outputPath": "C:\\projects\\personal-assistant\\tools\\outlook-bridge\\obj\\",
+      "outputPath": "C:\\projects\\pai\\tools\\outlook-bridge\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
