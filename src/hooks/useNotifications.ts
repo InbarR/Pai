@@ -17,10 +17,10 @@ export function useNotifications() {
 
     eventSource.addEventListener('reminder-due', (event) => {
       const data = JSON.parse(event.data);
-      window.dispatchEvent(new Event('pai-show-chat'));
+      // Only show in-app bubble if window is visible
       setBubble({
         id: `reminder-${data.id}-${Date.now()}`,
-        message: `Hey! Just a reminder: **${data.title}**`,
+        message: `Reminder: **${data.title}**`,
         detail: data.description || new Date(data.dueAt).toLocaleString(),
         reminderId: data.id,
       });
@@ -28,11 +28,11 @@ export function useNotifications() {
 
     eventSource.addEventListener('meeting-soon', (event) => {
       const data = JSON.parse(event.data);
-      window.dispatchEvent(new Event('pai-show-chat'));
       const startTime = new Date(data.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      // Only show in-app bubble — native OS notification is handled by Electron main process
       setBubble({
         id: `meeting-${Date.now()}`,
-        message: `Meeting starting soon: **${data.subject}**`,
+        message: `Meeting soon: **${data.subject}**`,
         detail: `${startTime}${data.location ? ' — ' + data.location : ''}${data.organizer ? ' (by ' + data.organizer + ')' : ''}`,
         joinUrl: data.joinUrl,
         links: data.links,

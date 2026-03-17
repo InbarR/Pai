@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
-import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square } from 'lucide-react';
+import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square, Copy, X } from 'lucide-react';
 import PaiMascot from './PaiMascot';
 
 interface Message {
@@ -27,6 +27,7 @@ export default function ChatPanel() {
     try { return JSON.parse(sessionStorage.getItem('pai-messages') || '[]'); } catch { return []; }
   });
   const [input, setInput] = useState('');
+  const [pastedImages, setPastedImages] = useState<{ data: string; name: string }[]>([]);
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const [authPending, setAuthPending] = useState(false);
@@ -220,24 +221,32 @@ export default function ChatPanel() {
 
   const sendMessage = async () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text && pastedImages.length === 0) return;
 
     // If already streaming, stop it first
     if (streaming) stopStreaming();
 
+    // Build content with images
+    const images = pastedImages.map(img => img.data);
+    const displayContent = text + (images.length > 0 ? `\n:::images:::${JSON.stringify(images)}` : '');
+    const sendContent = text + (images.length > 0 ? '\n[Image attached]' : '');
+
     // Add to prompt history (most recent first, deduplicated)
-    setPromptHistory(prev => {
-      const updated = [text, ...prev.filter(p => p !== text)];
-      return updated.slice(0, 100); // cap at 100
-    });
+    if (text) {
+      setPromptHistory(prev => {
+        const updated = [text, ...prev.filter(p => p !== text)];
+        return updated.slice(0, 100);
+      });
+    }
     setPromptIdx(-1);
 
     const now = new Date().toISOString();
-    // Clean any leftover thinking indicators before adding new messages
     const cleanMessages = messages.filter(m => m.content !== ':::thinking:::');
-    const newMessages: Message[] = [...cleanMessages, { role: 'user', content: text, timestamp: now }];
+    const newMessages: Message[] = [...cleanMessages, { role: 'user', content: displayContent, timestamp: now }];
     setMessages([...newMessages, { role: 'assistant', content: ':::thinking:::', timestamp: now }]);
     setInput('');
+    setPastedImages([]);
+    if (inputRef.current) inputRef.current.style.height = 'auto';
     setStreaming(true);
 
     // Ensure session exists and save user message
@@ -248,11 +257,33 @@ export default function ChatPanel() {
       const controller = new AbortController();
       abortRef.current = controller;
 
+      // Build messages, converting image markers to multimodal content
+      const apiMessages = newMessages.map(m => {
+        if (m.content.includes(':::images:::')) {
+          const parts: any[] = [];
+          const lines = m.content.split('\n');
+          for (const line of lines) {
+            if (line.startsWith(':::images:::')) {
+              try {
+                const imgs = JSON.parse(line.slice(12));
+                for (const src of imgs) {
+                  parts.push({ type: 'image_url', image_url: { url: src } });
+                }
+              } catch {}
+            } else if (line.trim()) {
+              parts.push({ type: 'text', text: line });
+            }
+          }
+          return { role: m.role, content: parts };
+        }
+        return { role: m.role, content: m.content };
+      });
+
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+          messages: apiMessages,
           model,
         }),
         signal: controller.signal,
@@ -530,15 +561,28 @@ export default function ChatPanel() {
                   <PaiMascot size={24} />
                 </div>
               )}
-              <div>
+              <div className="chat-bubble-wrap">
                 <div className="chat-bubble-content">
-                  {msg.content.split('\n').map((line, j) => (
-                    <p key={j}>{renderMarkdownLine(line)}</p>
-                  ))}
+                  {msg.content.split('\n').map((line, j) => {
+                    if (line.startsWith(':::images:::')) {
+                      try {
+                        const imgs = JSON.parse(line.slice(12));
+                        return <div key={j} className="chat-images">{imgs.map((src: string, k: number) => (
+                          <img key={k} src={src} alt="Pasted" className="chat-pasted-image" />
+                        ))}</div>;
+                      } catch { return null; }
+                    }
+                    return <p key={j}>{renderMarkdownLine(line)}</p>;
+                  })}
                   {streaming && i === messages.length - 1 && msg.role === 'assistant' && (
                     <span className="chat-cursor" />
                   )}
                 </div>
+                <button className="chat-copy-btn" title="Copy" onClick={() => {
+                  navigator.clipboard.writeText(msg.content);
+                }}>
+                  <Copy size={12} />
+                </button>
                 {msg.timestamp && (
                   <div className={`chat-timestamp ${msg.role}`}>
                     {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -551,23 +595,64 @@ export default function ChatPanel() {
         <div ref={bottomRef} />
       </div>
 
+      {pastedImages.length > 0 && (
+        <div className="chat-image-previews">
+          {pastedImages.map((img, i) => (
+            <div key={i} className="chat-image-preview">
+              <img src={img.data} alt={img.name} />
+              <button className="ghost" onClick={() => setPastedImages(prev => prev.filter((_, j) => j !== i))}>
+                <X size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="chat-input-bar">
         <textarea
           ref={inputRef}
           value={input}
-          onChange={e => { setInput(e.target.value); setPromptIdx(-1); }}
+          onChange={e => {
+            setInput(e.target.value); setPromptIdx(-1);
+            // Auto-resize
+            const el = e.target;
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+          }}
           onKeyDown={handleKeyDown}
+          onPaste={e => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (const item of Array.from(items)) {
+              if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (!file) continue;
+                const reader = new FileReader();
+                reader.onload = () => {
+                  const data = reader.result as string;
+                  setPastedImages(prev => [...prev, { data, name: file.name || 'image.png' }]);
+                };
+                reader.readAsDataURL(file);
+              }
+            }
+          }}
           placeholder={authenticated ? 'Ask me anything... (↑ for history)' : 'Sign in with GitHub to chat'}
           disabled={!authenticated && !authPending}
           rows={1}
         />
-        <button
-          onClick={sendMessage}
-          disabled={!input.trim() || !authenticated}
-          className="chat-send"
-        >
-          <Send size={16} />
-        </button>
+        {streaming ? (
+          <button onClick={stopStreaming} className="chat-send chat-stop" title="Stop">
+            <Square size={14} />
+          </button>
+        ) : (
+          <button
+            onClick={sendMessage}
+            disabled={!input.trim() || !authenticated}
+            className="chat-send"
+          >
+            <Send size={16} />
+          </button>
+        )}
       </div>
     </div>
   );

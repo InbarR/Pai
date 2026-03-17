@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, screen, globalShortcut, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, screen, globalShortcut, ipcMain, shell, Notification } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const http = require('http');
@@ -140,9 +140,11 @@ function snapToSide(side) {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
   const { x: workX, y: workY } = primaryDisplay.workArea;
-  const winWidth = 420;
+  const isWide = side === 'right-wide' || side === 'left-wide';
+  const winWidth = isWide ? Math.min(700, Math.floor(screenW * 0.45)) : 420;
+  const actualSide = side.replace('-wide', '');
 
-  const x = side === 'left' ? workX : workX + screenW - winWidth;
+  const x = actualSide === 'left' ? workX : workX + screenW - winWidth;
   mainWindow.setBounds({ x, y: workY, width: winWidth, height: screenH });
   mainWindow.setAlwaysOnTop(true, 'pop-up-menu');
   showWindow();
@@ -155,20 +157,9 @@ function expandWindow() {
 }
 
 function createTray() {
-  // Generate a proper 16x16 icon programmatically
   const { nativeImage } = require('electron');
-  const size = 16;
-  const buf = Buffer.alloc(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const dx = x - size / 2, dy = y - size / 2;
-      const idx = (y * size + x) * 4;
-      if (Math.sqrt(dx * dx + dy * dy) < size / 2 - 1) {
-        buf[idx] = 99; buf[idx + 1] = 102; buf[idx + 2] = 241; buf[idx + 3] = 255;
-      }
-    }
-  }
-  const icon = nativeImage.createFromBuffer(buf, { width: size, height: size });
+  const iconPath = path.join(__dirname, 'icon.png');
+  const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
   tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
@@ -238,8 +229,21 @@ ipcMain.handle('save-settings', (_, settings) => {
 ipcMain.handle('window-maximize', () => {
   if (!mainWindow) return;
   mainWindow.setAlwaysOnTop(false);
-  mainWindow.maximize();
-  return { maximized: true };
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  // Use large bounds instead of maximize so window stays resizable
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+  const { x: workX, y: workY } = primaryDisplay.workArea;
+  const w = Math.floor(screenW * 0.85);
+  const h = Math.floor(screenH * 0.9);
+  mainWindow.setBounds({
+    x: workX + Math.floor((screenW - w) / 2),
+    y: workY + Math.floor((screenH - h) / 2),
+    width: w,
+    height: h,
+  });
+  showWindow();
+  return { maximized: false };
 });
 
 ipcMain.handle('window-hide', () => {
@@ -258,10 +262,41 @@ function watchNotifications() {
 
   function connect() {
     const req = http.get(url, (res) => {
+      let sseBuffer = '';
       res.on('data', (chunk) => {
-        const text = chunk.toString();
-        if (text.includes('event: reminder-due')) {
-          popUp();
+        sseBuffer += chunk.toString();
+        const lines = sseBuffer.split('\n');
+        sseBuffer = lines.pop() || '';
+
+        let eventType = '';
+        let eventData = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+          if (line.startsWith('data: ') && eventType) {
+            eventData = line.slice(6).trim();
+            try {
+              const data = JSON.parse(eventData);
+              if (eventType === 'reminder-due') {
+                const notif = new Notification({
+                  title: 'Pai Reminder',
+                  body: data.title || 'You have a reminder',
+                  icon: path.join(__dirname, 'icon.png'),
+                });
+                notif.on('click', () => popUp());
+                notif.show();
+              } else if (eventType === 'meeting-soon') {
+                const notif = new Notification({
+                  title: `Meeting: ${data.subject || 'Upcoming'}`,
+                  body: `Starting at ${new Date(data.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+                  icon: path.join(__dirname, 'icon.png'),
+                });
+                notif.on('click', () => popUp());
+                notif.show();
+              }
+            } catch {}
+            eventType = '';
+            eventData = '';
+          }
         }
       });
       res.on('end', () => setTimeout(connect, 5000));

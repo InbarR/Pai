@@ -1,4 +1,4 @@
-import { ReactNode, useState, useEffect, useCallback } from 'react';
+import { ReactNode, useState, useEffect, useCallback, useRef } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
@@ -8,64 +8,76 @@ import {
 } from 'lucide-react';
 import ChatPanel from './chat/ChatPanel';
 
-const SIDECAR_THRESHOLD = 600; // px — below this = sidecar mode
+// Mode is now explicit state, not based on window width
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [pinned, setPinned] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
-  const [width, setWidth] = useState(window.innerWidth);
+  const [chatWidth, setChatWidth] = useState(380);
+  const resizingRef = useRef(false);
+  const [mode, setMode] = useState<'sidecar' | 'wide' | 'full'>('sidecar');
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const [altHeld, setAltHeld] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
 
-  const isSidecar = width < SIDECAR_THRESHOLD;
-
-  // Track window resizes
+  // Track Alt key hold
   useEffect(() => {
-    const onResize = () => setWidth(window.innerWidth);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    const down = (e: KeyboardEvent) => { if (e.key === 'Alt') setAltHeld(true); };
+    const up = (e: KeyboardEvent) => { if (e.key === 'Alt') setAltHeld(false); };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', () => setAltHeld(false));
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
   }, []);
 
+  const isSidecar = mode === 'sidecar' || mode === 'wide';
+
   const goSidecar = useCallback(() => {
+    setMode('sidecar');
     try { (window as any).pai?.sidecar?.('right'); } catch {}
-    // Width change will trigger re-render automatically
+  }, []);
+
+  const goWide = useCallback(() => {
+    setMode('wide');
+    try { (window as any).pai?.sidecar?.('right-wide'); } catch {}
   }, []);
 
   const goFull = useCallback(() => {
+    setMode('full');
     try { (window as any).pai?.maximize?.(); } catch {}
-    // Width change will trigger re-render automatically
   }, []);
+
+  // Cycle: sidecar → wide → full → sidecar
+  const cycleMode = useCallback(() => {
+    if (modeRef.current === 'sidecar') goWide();
+    else if (modeRef.current === 'wide') goFull();
+    else goSidecar();
+  }, [goWide, goFull, goSidecar]);
 
   // Keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      // Alt+F — toggle sidecar/full
+      // Alt+F — cycle: sidecar → wide → full → sidecar
       if (e.altKey && e.key === 'f') {
         e.preventDefault();
-        if (window.innerWidth < SIDECAR_THRESHOLD) {
-          try { (window as any).pai?.maximize?.(); } catch {}
-        } else {
-          try { (window as any).pai?.sidecar?.('right'); } catch {}
-        }
+        cycleMode();
       }
-      // Esc — full→sidecar, sidecar→hide
+      // Esc — full→wide→sidecar→hide
       if (e.key === 'Escape' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '')) {
-        if (window.innerWidth >= SIDECAR_THRESHOLD) {
-          try { (window as any).pai?.sidecar?.('right'); } catch {}
-        } else {
-          try { (window as any).pai?.hide?.(); } catch {}
-        }
+        if (modeRef.current === 'full') goWide();
+        else if (modeRef.current === 'wide') goSidecar();
+        else try { (window as any).pai?.hide?.(); } catch {}
       }
-      // Alt+1..7 — navigate to sections (goes to full mode)
+      // Alt+1..6 — navigate to sections (goes to full mode)
       if (e.altKey && !e.ctrlKey && !e.shiftKey) {
-        const routes = ['/', '/notes', '/files', '/people', '/emails', '/reminders', '/reading'];
+        const routes = ['/', '/notes', '/files', '/people', '/emails', '/reading'];
         const num = parseInt(e.key);
         if (num >= 1 && num <= routes.length) {
           e.preventDefault();
           navigate(routes[num - 1]);
-          if (window.innerWidth < SIDECAR_THRESHOLD) {
-            try { (window as any).pai?.maximize?.(); } catch {}
-          }
+          if (modeRef.current === 'sidecar') goFull();
         }
       }
     }
@@ -76,6 +88,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   // Force sidecar from Electron (Ctrl+2)
   useEffect(() => {
     const handler = () => {
+      setMode('sidecar');
       try { (window as any).pai?.sidecar?.('right'); } catch {}
     };
     window.addEventListener('pai-force-sidecar', handler);
@@ -95,9 +108,8 @@ export default function Layout({ children }: { children: ReactNode }) {
       const notes = await api.get<any[]>('/notes');
       const openTasks = notes.filter((n: any) => !(n.isTask && n.taskStatus === 2)).length;
       return {
-        notes: openTasks,
+        notes: openTasks + (d.activeReminderCount || 0),
         emails: emails.length,
-        reminders: d.activeReminderCount,
         reading: reading.length,
       };
     },
@@ -111,7 +123,6 @@ export default function Layout({ children }: { children: ReactNode }) {
     { to: '/files', label: 'Files', icon: FolderOpen, count: 0 },
     { to: '/people', label: 'People', icon: Users, count: 0 },
     { to: '/emails', label: 'Emails', icon: Mail, count: counts?.emails || 0 },
-    { to: '/reminders', label: 'Reminders', icon: Bell, count: counts?.reminders || 0 },
     { to: '/reading', label: 'Reading', icon: BookOpen, count: counts?.reading || 0 },
   ];
 
@@ -125,14 +136,22 @@ export default function Layout({ children }: { children: ReactNode }) {
               <div className="brand-dot" />
               <span style={{ fontWeight: 700, fontSize: 14 }}>Pai</span>
             </div>
-            <button className="ghost expand-btn" onClick={goFull} title="Expand (Alt+F)">
-              <Maximize2 size={14} />
-              <kbd>Alt+F</kbd>
-            </button>
+            <div className="mode-switcher">
+              <button className={`mode-btn ${mode === 'sidecar' ? 'active' : ''}`} onClick={goSidecar} title="Sidecar">
+                <svg width="12" height="12" viewBox="0 0 16 16"><rect x="9" y="1" width="6" height="14" rx="1" fill="currentColor"/><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
+              </button>
+              <button className={`mode-btn ${mode === 'wide' ? 'active' : ''}`} onClick={goWide} title="Wide chat">
+                <svg width="12" height="12" viewBox="0 0 16 16"><rect x="6" y="1" width="9" height="14" rx="1" fill="currentColor"/><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
+              </button>
+              <button className={`mode-btn ${mode === 'full' ? 'active' : ''}`} onClick={goFull} title="Full app">
+                <svg width="12" height="12" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="currentColor" opacity="0.3"/><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
+              </button>
+              <button className="mode-btn" onClick={() => { try { (window as any).pai?.hide?.(); } catch {} }} title="Hide (Esc)">—</button>
+            </div>
           </div>
           <ChatPanel />
         </div>
-        <div className="chat-mode-nav">
+        <div className={`chat-mode-nav ${altHeld ? 'alt-held' : ''}`}>
           {navItems.map(({ to, label, icon: Icon, count }, idx) => (
             <NavLink key={to} to={to} end={to === '/'} title={`${label} (Alt+${idx + 1})`}
               className={({ isActive }) => `chat-nav-item ${isActive && to !== '/' ? 'active' : ''}`}
@@ -159,7 +178,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="brand-dot" />
           <h1>Pai</h1>
         </div>
-        <nav>
+        <nav className={altHeld ? 'alt-held' : ''}>
           {navItems.map(({ to, label, icon: Icon, count }, idx) => (
             <NavLink key={to} to={to} end={to === '/'} title={`${label} (Alt+${idx + 1})`}
               className={({ isActive }) => isActive ? 'active' : ''}>
@@ -179,20 +198,16 @@ export default function Layout({ children }: { children: ReactNode }) {
             onClick={() => setChatOpen(!chatOpen)} title={chatOpen ? 'Close chat' : 'Open chat'}>
             <MessageCircle size={16} />
           </button>
-          <button className="sidebar-pin" onClick={goSidecar} title="Sidecar mode (Alt+F)">
-            <Minimize2 size={16} />
-          </button>
-          <button className="sidebar-pin" onClick={() => { try { (window as any).pai?.hide?.(); } catch {} }} title="Minimize to tray">
-            <span style={{ fontSize: 16, lineHeight: 1 }}>—</span>
-          </button>
-          <button className="sidebar-pin" onClick={() => setPinned(!pinned)}
-            title={pinned ? 'Collapse' : 'Pin sidebar'}>
-            {pinned ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
-          </button>
+          <div className="mode-switcher" style={{ padding: '4px 0' }}>
+            <button className={`mode-btn ${mode === 'sidecar' ? 'active' : ''}`} onClick={goSidecar} title="Sidecar">S</button>
+            <button className={`mode-btn ${mode === 'wide' ? 'active' : ''}`} onClick={goWide} title="Wide chat">W</button>
+            <button className={`mode-btn ${mode === 'full' ? 'active' : ''}`} onClick={goFull} title="Full app">F</button>
+            <button className="mode-btn" onClick={() => { try { (window as any).pai?.hide?.(); } catch {} }} title="Hide">—</button>
+          </div>
         </div>
       </aside>
 
-      <main className="content">{children}</main>
+      <main className="content" style={chatOpen ? { marginRight: chatWidth } : undefined}>{children}</main>
 
       {!chatOpen && (
         <button className="chat-edge-toggle" onClick={() => setChatOpen(true)} title="Open chat">
@@ -200,7 +215,30 @@ export default function Layout({ children }: { children: ReactNode }) {
         </button>
       )}
 
-      <div className={`chat-sidebar ${chatOpen ? 'open' : ''}`}>
+      {chatOpen && (
+        <div className="resize-handle" style={{ right: chatWidth - 2 }} onMouseDown={e => {
+          e.preventDefault();
+          resizingRef.current = true;
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+          const onMove = (ev: MouseEvent) => {
+            if (!resizingRef.current) return;
+            const newWidth = Math.max(280, Math.min(700, window.innerWidth - ev.clientX));
+            setChatWidth(newWidth);
+          };
+          const onUp = () => {
+            resizingRef.current = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+          };
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+        }} />
+      )}
+
+      <div className={`chat-sidebar ${chatOpen ? 'open' : ''}`} style={chatOpen ? { width: chatWidth } : undefined}>
         <div className="chat-sidebar-header">
           <div className="flex items-center gap-2">
             <MessageCircle size={16} />

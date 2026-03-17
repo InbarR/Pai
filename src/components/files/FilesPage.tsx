@@ -31,12 +31,14 @@ export default function FilesPage() {
   const { data: openDocs = [], isLoading: loadingOpen, refetch: refetchOpen } = useQuery({
     queryKey: ['files-open'],
     queryFn: () => api.get<ScannedDoc[]>('/files/open'),
+    staleTime: 10_000,
     refetchInterval: 15_000,
   });
 
   const { data: recentDocs = [], isLoading: loadingRecent, refetch: refetchRecent } = useQuery({
     queryKey: ['files-recent'],
     queryFn: () => api.get<ScannedDoc[]>('/files/recent'),
+    staleTime: 60_000,
   });
 
   // Close context menu on click

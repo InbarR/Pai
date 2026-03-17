@@ -178,7 +178,8 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
 
 .sidebar:hover .nav-count,
 .sidebar.pinned .nav-count { opacity: 1; }
-.nav-shortcut { font-size: 9px; color: var(--text-muted); opacity: 0.4; min-width: 16px; }
+.nav-shortcut { font-size: 9px; color: var(--text-muted); opacity: 0.3; min-width: 16px; transition: all 0.15s; }
+.alt-held .nav-shortcut { opacity: 1; color: var(--accent); font-weight: 700; font-size: 11px; }
 
 .sidebar a:hover { background: var(--bg-hover); color: var(--text-primary); }
 
@@ -571,6 +572,9 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   gap: 2px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .todo-tab {
@@ -605,6 +609,10 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
 .todo-item:hover { background: var(--bg-hover); }
 .todo-item.active { background: var(--bg-elevated); border-left: 3px solid var(--accent); }
 .todo-item.selected { background: var(--accent-glow); border-left: 3px solid var(--accent); }
+.todo-item.overdue { border-left: 3px solid #ef4444; }
+.todo-due.overdue { color: #ef4444; }
+.reminder-status { color: var(--accent) !important; }
+.todo-item.overdue .reminder-status { color: #ef4444 !important; }
 .todo-list-panel.drop-active { outline: 2px dashed var(--accent); outline-offset: -4px; background: var(--accent-glow); }
 .todo-item.done { opacity: 0.45; }
 
@@ -1453,9 +1461,20 @@ label.checkbox input[type="checkbox"] {
   -webkit-app-region: drag;
 }
 
-.chat-mode-topbar button { -webkit-app-region: no-drag; }
-.expand-btn { display: flex; align-items: center; gap: 6px; }
-.expand-btn kbd { font-size: 9px; color: var(--text-muted); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 3px; padding: 1px 4px; font-family: inherit; }
+.chat-mode-topbar button, .chat-mode-topbar .mode-switcher, .chat-mode-topbar .mode-switcher * { -webkit-app-region: no-drag; }
+.mode-switcher {
+  display: flex; align-items: center; gap: 2px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 2px;
+}
+.mode-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 22px; border: none; border-radius: 5px;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  transition: all 0.15s; font-size: 11px; font-weight: 600; font-family: inherit;
+}
+.mode-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.mode-btn.active { background: var(--accent-glow); color: var(--accent); }
 
 .chat-mode-nav {
   display: flex;
@@ -1499,10 +1518,21 @@ label.checkbox input[type="checkbox"] {
 .chat-nav-hint {
   font-size: 8px;
   color: var(--text-muted);
-  opacity: 0.5;
+  opacity: 0;
   position: absolute;
   bottom: 1px;
   right: 2px;
+  transition: all 0.15s;
+}
+.alt-held .chat-nav-hint {
+  opacity: 1;
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 700;
+  background: var(--accent-glow);
+  border-radius: 4px;
+  padding: 0 4px;
+  bottom: -2px;
 }
 
 /* ===== Chat sidebar (right panel) ===== */
@@ -1513,11 +1543,28 @@ label.checkbox input[type="checkbox"] {
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
-  transition: width 0.25s ease;
   flex-shrink: 0;
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
 }
 
 .chat-sidebar.open { width: 380px; }
+
+.resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 100;
+  transition: background 0.15s;
+}
+.resize-handle:hover, .resize-handle:active {
+  background: var(--accent);
+}
 
 .chat-sidebar-header {
   display: flex;
@@ -1826,6 +1873,17 @@ label.checkbox input[type="checkbox"] {
 .chat-bubble-content p { margin-bottom: 4px; }
 .chat-bubble-content p:last-child { margin-bottom: 0; }
 
+.chat-bubble-wrap { position: relative; }
+.chat-copy-btn {
+  position: absolute; top: 4px; right: 4px;
+  opacity: 0; transition: opacity 0.15s;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 3px 5px; cursor: pointer;
+  color: var(--text-muted); line-height: 1;
+}
+.chat-copy-btn:hover { color: var(--text-primary); }
+.chat-bubble-wrap:hover .chat-copy-btn { opacity: 1; }
+
 .chat-bubble-content .inline-code {
   background: rgba(255,255,255,0.1);
   padding: 1px 6px;
@@ -1882,6 +1940,14 @@ label.checkbox input[type="checkbox"] {
   cursor: not-allowed;
   transform: none;
 }
+.chat-stop { background: var(--bg-surface) !important; border: 1px solid var(--border) !important; }
+
+.chat-image-previews { display: flex; gap: 8px; padding: 8px 12px 0; flex-wrap: wrap; }
+.chat-image-preview { position: relative; }
+.chat-image-preview img { max-height: 60px; border-radius: 6px; border: 1px solid var(--border); }
+.chat-image-preview button { position: absolute; top: -4px; right: -4px; background: var(--bg-elevated); border-radius: 50%; width: 16px; height: 16px; padding: 0; display: flex; align-items: center; justify-content: center; }
+.chat-pasted-image { max-width: 100%; max-height: 200px; border-radius: 8px; margin: 4px 0; }
+.chat-images { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .chat-stop {
   width: 38px;
@@ -1940,7 +2006,7 @@ label.checkbox input[type="checkbox"] {
 /* Pai companion window */
 .pai-companion {
   position: fixed;
-  top: 12px;
+  bottom: 100px;
   right: 12px;
   z-index: 9999;
   width: 340px;

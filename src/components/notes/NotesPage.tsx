@@ -5,7 +5,7 @@ import { Note } from '../../api/types';
 import NoteEditor from './NoteEditor';
 import {
   Plus, Search, Pin, Trash2, FolderPlus, Book, CheckSquare, Circle, CheckCircle2,
-  Calendar, PlayCircle, StickyNote, X, Upload,
+  Calendar, PlayCircle, StickyNote, X, Upload, Bell, Edit3,
 } from 'lucide-react';
 
 interface Notebook { id: number; name: string; icon: string; noteCount: number; }
@@ -21,7 +21,7 @@ export default function NotesPage() {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [activeNotebook, setActiveNotebook] = useState<number | null>(null);
-  const [view, setView] = useState<'all' | 'tasks' | 'notes' | 'done'>('all');
+  const [view, setView] = useState<'all' | 'tasks' | 'notes' | 'done' | 'reminders'>('all');
   const [quickAdd, setQuickAdd] = useState('');
   const [quickIsTask, setQuickIsTask] = useState(true);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: number } | null>(null);
@@ -37,6 +37,8 @@ export default function NotesPage() {
   const renameNbRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [editingReminder, setEditingReminder] = useState<any | null>(null);
+
   const { data: notebooks = [] } = useQuery({
     queryKey: ['notebooks'],
     queryFn: () => api.get<Notebook[]>('/notes/notebooks'),
@@ -51,10 +53,17 @@ export default function NotesPage() {
     },
   });
 
+  const { data: reminders = [] } = useQuery({
+    queryKey: ['reminders'],
+    queryFn: () => api.get<any[]>('/reminders'),
+  });
+  const activeReminders = reminders.filter((r: any) => !r.isDismissed);
+
   // Filter by view
   const notes = view === 'tasks' ? allNotes.filter(n => n.isTask && n.taskStatus !== 2)
     : view === 'notes' ? allNotes.filter(n => !n.isTask)
     : view === 'done' ? allNotes.filter(n => n.isTask && n.taskStatus === 2)
+    : view === 'reminders' ? [] // handled separately
     : allNotes.filter(n => !(n.isTask && n.taskStatus === 2)); // 'all' hides done
 
   const active = allNotes.find(n => n.id === activeId);
@@ -328,6 +337,9 @@ export default function NotesPage() {
           </button>
           <button className={`todo-tab ${view === 'notes' ? 'active' : ''}`} onClick={() => setView('notes')}>Notes</button>
           <button className={`todo-tab ${view === 'done' ? 'active' : ''}`} onClick={() => setView('done')}>Done ({doneCount})</button>
+          <button className={`todo-tab ${view === 'reminders' ? 'active' : ''}`} onClick={() => setView('reminders')}>
+            <Bell size={12} /> Reminders ({activeReminders.length})
+          </button>
           <div style={{ marginLeft: 'auto' }}>
             <div className="notes-search" style={{ width: 160 }}>
               <Search size={12} className="notes-search-icon" />
@@ -338,7 +350,41 @@ export default function NotesPage() {
 
         {/* Items */}
         <div className="todo-list-scroll">
-          {notes.map(note => {
+          {/* Reminders shown in All, Tasks, and Reminders views */}
+          {(view === 'all' || view === 'tasks' || view === 'reminders') && activeReminders.map((r: any) => {
+            const isOverdue = new Date(r.dueAt) < new Date();
+            return (
+              <div key={`rem-${r.id}`} className={`todo-item ${isOverdue ? 'overdue' : ''}`}
+                onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, id: -r.id }); }}>
+                <button className="todo-status reminder-status" title="Dismiss"
+                  onClick={() => { api.post(`/reminders/${r.id}/dismiss`).then(() => { qc.invalidateQueries({ queryKey: ['reminders'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); }); }}>
+                  <Bell size={16} />
+                </button>
+                <div className="todo-content" style={{ flex: 1 }}>
+                  <div className="todo-title">{r.title}</div>
+                  <div className="todo-meta">
+                    <span className={`todo-due ${isOverdue ? 'overdue' : ''}`}>
+                      <Calendar size={10} /> {new Date(r.dueAt).toLocaleString()}
+                    </span>
+                    {r.description && <span>{r.description}</span>}
+                  </div>
+                </div>
+                <button className="ghost" title="Edit" onClick={() => setEditingReminder(r)}
+                  style={{ padding: '4px', flexShrink: 0 }}>
+                  <Edit3 size={14} />
+                </button>
+              </div>
+            );
+          })}
+          {view === 'reminders' && activeReminders.length === 0 && (
+            <div className="text-muted text-small" style={{ padding: 24, textAlign: 'center' }}>No active reminders</div>
+          )}
+          {(view === 'all' || view === 'tasks') && activeReminders.length > 0 && notes.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+          )}
+
+          {/* Notes/Tasks list */}
+          {view !== 'reminders' && notes.map(note => {
             const StatusIcon = note.isTask ? statusIcons[note.taskStatus] : StickyNote;
             const isActive = activeId === note.id;
             return (
@@ -383,7 +429,7 @@ export default function NotesPage() {
               </div>
             );
           })}
-          {notes.length === 0 && <div className="text-muted text-small" style={{ padding: 24, textAlign: 'center' }}>
+          {view !== 'reminders' && notes.length === 0 && <div className="text-muted text-small" style={{ padding: 24, textAlign: 'center' }}>
             {search ? 'No matches' : view === 'done' ? 'No completed tasks' : 'Nothing here yet. Add one above!'}
           </div>}
         </div>
@@ -459,6 +505,53 @@ export default function NotesPage() {
           <div className="note-editor-empty">Select an item to see details</div>
         )}
       </div>
+
+      {/* Edit reminder dialog */}
+      {editingReminder && (
+        <div className="palette-overlay" onClick={() => setEditingReminder(null)}>
+          <div className="palette" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>Edit Reminder</div>
+              <input className="palette-input" defaultValue={editingReminder.title} placeholder="Title"
+                ref={el => el?.focus()}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    const titleInput = e.target as HTMLInputElement;
+                    const form = titleInput.closest('.palette')!;
+                    const dateInput = form.querySelector('input[type="datetime-local"]') as HTMLInputElement;
+                    const descInput = form.querySelector('textarea') as HTMLTextAreaElement;
+                    api.put(`/reminders/${editingReminder.id}`, {
+                      title: titleInput.value,
+                      dueAt: dateInput?.value ? new Date(dateInput.value).toISOString() : editingReminder.dueAt,
+                      description: descInput?.value || '',
+                    }).then(() => { qc.invalidateQueries({ queryKey: ['reminders'] }); setEditingReminder(null); });
+                  }
+                  if (e.key === 'Escape') setEditingReminder(null);
+                }} />
+              <input type="datetime-local" defaultValue={editingReminder.dueAt?.substring(0, 16)}
+                style={{ padding: '8px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13 }} />
+              <textarea defaultValue={editingReminder.description || ''} placeholder="Description (optional)"
+                rows={2}
+                style={{ padding: '8px 12px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)', fontSize: 13, resize: 'vertical' }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="ghost" onClick={() => setEditingReminder(null)} style={{ flex: 1, padding: 8 }}>Cancel</button>
+                <button style={{ flex: 1, padding: 8, background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer' }}
+                  onClick={() => {
+                    const form = document.querySelector('.palette')!;
+                    const titleInput = form.querySelector('.palette-input') as HTMLInputElement;
+                    const dateInput = form.querySelector('input[type="datetime-local"]') as HTMLInputElement;
+                    const descInput = form.querySelector('textarea') as HTMLTextAreaElement;
+                    api.put(`/reminders/${editingReminder.id}`, {
+                      title: titleInput?.value || editingReminder.title,
+                      dueAt: dateInput?.value ? new Date(dateInput.value).toISOString() : editingReminder.dueAt,
+                      description: descInput?.value || '',
+                    }).then(() => { qc.invalidateQueries({ queryKey: ['reminders'] }); setEditingReminder(null); });
+                  }}>Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* OneNote import dialog */}
       {showOneNote && (

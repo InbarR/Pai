@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { askWorkIQ } from '../services/workiq';
 import {
   isAuthenticated, getGitHubToken,
   startDeviceCodeAuth, pollForToken,
@@ -76,6 +77,7 @@ READ actions (query data):
 - {"type": "get_emails", "count": 10} — get recent emails
 - {"type": "get_calendar_today"} — get today's meetings
 - {"type": "get_calendar_upcoming", "days": 7} — get upcoming meetings
+- {"type": "ask_workiq", "query": "..."} — query Microsoft 365 data using WorkIQ (emails, meetings, documents, Teams messages, people). Use this for complex queries across M365.
 - {"type": "get_email_body", "entryId": "..."} — get full body of a specific email (use entryId from search results)
 - {"type": "open_draft", "to": "email@...", "subject": "...", "body": "<html>...</html>", "cc": "email@..."} — compose a new email and open it in Outlook desktop app
 
@@ -85,12 +87,14 @@ CRITICAL RULES:
 - You can include MULTIPLE ACTION blocks in one response if needed.
 - After ACTION blocks, write a short friendly response about what you did.
 - Keep responses concise. Always ACT, never just describe what you would do.
-- NEVER respond with "Let me..." or "I'll..." without an ACTION block. If the user asks you to do something, DO IT with an ACTION block.
+- NEVER respond with "Let me..." or "I'll..." or "One moment" without an ACTION block. If the user asks you to do something, you MUST include the ACTION block in your FIRST response.
+- If the user asks about a person, ALWAYS use search_emails or ask_workiq to find info. Never say you can't find someone without trying.
 - When showing calendar/meeting info, if a meeting has a joinUrl, format it as: **[Meeting Name](joinUrl)** so it's clickable. Always include the join link.
-- Support Hebrew and English — respond in the same language the user used.`;
+- Support Hebrew and English — respond in the same language the user used.
+- For people lookups, prefer search_emails first (faster), then ask_workiq for deeper M365 data.`;
 
 // Execute an action
-function executeAction(action: any): { success: boolean; message: string; data?: any } {
+async function executeAction(action: any): Promise<{ success: boolean; message: string; data?: any }> {
   try {
     switch (action.type) {
       case 'add_note': {
@@ -166,6 +170,10 @@ function executeAction(action: any): { success: boolean; message: string; data?:
         const events = runBridge(`calendar-upcoming ${days}`);
         return { success: true, message: `Found ${(events as any[]).length} upcoming events.`, data: events };
       }
+      case 'ask_workiq': {
+        const answer = await askWorkIQ(action.query || '');
+        return { success: true, message: answer, data: [{ response: answer }] };
+      }
       case 'get_email_body': {
         const emailBody = runBridge(`email-body "${(action.entryId || '').replace(/"/g, '')}"`);
         return { success: true, message: 'Email body retrieved.', data: emailBody };
@@ -187,7 +195,7 @@ function executeAction(action: any): { success: boolean; message: string; data?:
 }
 
 // Parse ACTION blocks from AI response and execute them
-function processActions(aiResponse: string): { cleanedResponse: string; actions: any[] } {
+async function processActions(aiResponse: string): Promise<{ cleanedResponse: string; actions: any[] }> {
   const actionRegex = /```ACTION\s*\n([\s\S]*?)```/g;
   const actions: any[] = [];
   let cleanedResponse = aiResponse;
@@ -196,7 +204,7 @@ function processActions(aiResponse: string): { cleanedResponse: string; actions:
   while ((match = actionRegex.exec(aiResponse)) !== null) {
     try {
       const action = JSON.parse(match[1].trim());
-      const result = executeAction(action);
+      const result = await executeAction(action);
       actions.push({ ...action, result });
     } catch { }
     cleanedResponse = cleanedResponse.replace(match[0], '').trim();
@@ -253,7 +261,7 @@ router.post('/', async (req, res) => {
 
     // Pass 1: get AI response (may contain ACTION blocks)
     const rawReply = await chatCompletion(fullMessages, model);
-    const { cleanedResponse, actions } = processActions(rawReply);
+    const { cleanedResponse, actions } = await processActions(rawReply);
 
     // Check if any READ actions returned data
     const readResults = actions.filter(a => a.result?.data && Array.isArray(a.result.data) && a.result.data.length > 0);
@@ -282,6 +290,20 @@ router.post('/', async (req, res) => {
 
 // Also keep the stream endpoint for simple non-action messages
 router.post('/stream', async (req: Request, res: Response) => {
+  // Hard timeout — if anything takes longer than 45s, end the response
+  const hardTimeout = setTimeout(() => {
+    if (!res.writableEnded) {
+      console.log('[Chat] Hard timeout hit (45s)');
+      if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({ content: '\n\n(Timed out — try again or rephrase)' })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      } else {
+        res.status(504).json({ error: 'Request timed out' });
+      }
+    }
+  }, 45000);
+
   try {
     const { messages, model = 'gpt-4o' } = req.body;
     const context = buildContext();
@@ -317,8 +339,26 @@ router.post('/stream', async (req: Request, res: Response) => {
       }
     }
     console.log('[Chat] Raw AI reply:', rawReply.substring(0, 500));
-    const { cleanedResponse, actions } = processActions(rawReply);
+    let { cleanedResponse, actions } = await processActions(rawReply);
     console.log('[Chat] Actions found:', actions.length, actions.map(a => a.type));
+
+    // If AI didn't include actions but clearly intended to, search automatically
+    if (actions.length === 0 && /let me|one moment|i'll check|i'll search|אבדוק|רגע/i.test(rawReply)) {
+      console.log('[Chat] AI intended action but forgot ACTION block — auto-searching');
+      sendStatus('Searching...');
+      // Extract the likely search query from the last user message
+      const lastUserMsg = messages.filter((m: any) => m.role === 'user').pop();
+      if (lastUserMsg) {
+        const msgText = typeof lastUserMsg.content === 'string' ? lastUserMsg.content : Array.isArray(lastUserMsg.content) ? lastUserMsg.content.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(' ') : '';
+        const searchQuery = msgText.replace(/^(who is|find|search|look up|מי (זה|היא)|חפש)\s*/i, '').trim();
+        if (searchQuery) {
+          const emailResult = await executeAction({ type: 'search_emails', query: searchQuery });
+          if (emailResult.data && emailResult.data.length > 0) {
+            actions.push({ type: 'search_emails', query: searchQuery, result: emailResult });
+          }
+        }
+      }
+    }
 
     if (actions.length > 0) {
       sendStatus(`Running: ${actions.map(a => a.type.replace(/_/g, ' ')).join(', ')}...`);
@@ -329,44 +369,59 @@ router.post('/stream', async (req: Request, res: Response) => {
     let finalReply = cleanedResponse;
 
     if (readResults.length > 0) {
-      // Show what actions ran
       const actionNames = actions.map(a => a.type.replace(/_/g, ' ')).join(', ');
       sendStatus(`Ran: ${actionNames}. Summarizing...`);
 
-      const dataContext = readResults.map(a =>
-        `Results for ${a.type}${a.query ? ` "${a.query}"` : ''}:\n${JSON.stringify(a.result.data, null, 2)}`
-      ).join('\n\n');
+      // Trim data to avoid huge payloads — limit to first 3000 chars
+      const dataContext = readResults.map(a => {
+        const json = JSON.stringify(a.result.data, null, 2);
+        return `Results for ${a.type}${a.query ? ` "${a.query}"` : ''}:\n${json.substring(0, 3000)}`;
+      }).join('\n\n');
 
+      // Keep Pass 2 context small — only last 3 user messages + system + data
+      const recentMsgs = messages.slice(-3);
       const pass2Messages = [
-        ...fullMessages,
+        { role: 'system', content: SYSTEM_PROMPT },
+        ...recentMsgs,
         { role: 'assistant', content: rawReply },
-        { role: 'system', content: `ACTION RESULTS:\n${dataContext}\n\nNow provide a helpful, concise summary to the user. No ACTION blocks.` },
+        { role: 'system', content: `ACTION RESULTS:\n${dataContext}\n\nNow provide a helpful, concise summary to the user. No ACTION blocks. Respond in the same language the user used.` },
       ];
 
       try {
-        finalReply = await chatCompletion(pass2Messages, model);
+        const pass2Promise = chatCompletion(pass2Messages, model);
+        const timeoutPromise = new Promise<string>((_, reject) => setTimeout(() => reject(new Error('timeout')), 30000));
+        finalReply = await Promise.race([pass2Promise, timeoutPromise]);
         console.log('[Chat] Pass 2 reply:', finalReply.substring(0, 200));
       } catch (err: any) {
-        console.log('[Chat] Pass 2 failed with', model, ':', err.message);
-        try {
-          finalReply = await chatCompletion(pass2Messages, 'gpt-4o');
-        } catch (err2: any) {
-          console.log('[Chat] Pass 2 fallback also failed:', err2.message);
-          // Use Pass 1 cleaned text + raw data summary as fallback
-          const dataSummary = readResults.map(a => `${a.type}: ${a.result.message}`).join('\n');
-          finalReply = cleanedResponse + '\n\n' + dataSummary;
-        }
+        console.log('[Chat] Pass 2 failed:', err.message);
+        // Fallback: show raw data summary
+        const dataSummary = readResults.map(a => `${a.type}: ${a.result.message}`).join('\n');
+        finalReply = (cleanedResponse || '') + '\n\n' + dataSummary;
       }
     } else if (actions.length > 0) {
-      const actionNames = actions.map(a => `${a.type}: ${a.result?.message || 'done'}`).join(', ');
-      sendStatus(actionNames);
+      const actionSummary = actions.map(a => a.result?.message || `${a.type}: done`).join('\n');
+      sendStatus(actionSummary);
+      // If cleaned response is empty, use action results as the reply
+      if (!finalReply.trim()) {
+        finalReply = actionSummary;
+      }
+    }
+
+    // If still empty, provide a fallback
+    if (!finalReply.trim()) {
+      finalReply = "Done! Let me know if you need anything else.";
+    }
+
+    // Truncate very long responses to prevent UI freeze
+    if (finalReply.length > 4000) {
+      finalReply = finalReply.substring(0, 4000) + '\n\n...(truncated)';
     }
 
     // Send the complete response as streamed chunks (simulated)
     const words = finalReply.split(' ');
     for (let i = 0; i < words.length; i++) {
       const chunk = (i === 0 ? '' : ' ') + words[i];
-      res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
     }
 
     if (actions.length > 0) {
@@ -375,10 +430,12 @@ router.post('/stream', async (req: Request, res: Response) => {
 
     res.write('data: [DONE]\n\n');
     res.end();
+    clearTimeout(hardTimeout);
   } catch (err: any) {
+    clearTimeout(hardTimeout);
     if (!res.headersSent) {
       res.status(500).json({ error: err.message });
-    } else {
+    } else if (!res.writableEnded) {
       res.write(`data: ${JSON.stringify({ content: `\n\nError: ${err.message}` })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
