@@ -111,6 +111,27 @@ export default function ChatPanel() {
     if (sessionId) sessionStorage.setItem('pai-session-id', String(sessionId));
   }, [sessionId]);
 
+  // Auto-chat from notification clicks
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const msg = (e as CustomEvent).detail;
+      if (msg && typeof msg === 'string') {
+        // Directly trigger a send by setting input and using a flag
+        (window as any).__paiAutoSend = msg;
+        setInput(msg);
+      }
+    };
+    window.addEventListener('pai-auto-chat', handler);
+    return () => window.removeEventListener('pai-auto-chat', handler);
+  }, []);
+  // Watch for auto-send flag
+  useEffect(() => {
+    if ((window as any).__paiAutoSend && input === (window as any).__paiAutoSend) {
+      delete (window as any).__paiAutoSend;
+      sendMessage();
+    }
+  }, [input]);
+
   // Load prompt history from all sessions on mount
   useEffect(() => {
     loadPromptHistory();
@@ -119,16 +140,29 @@ export default function ChatPanel() {
   async function loadPromptHistory() {
     try {
       const sessions = await api.get<ChatSession[]>('/chat/sessions');
+      // Sessions are already sorted newest first
       const allPrompts: string[] = [];
       for (const s of sessions.slice(0, 20)) {
         const full = await api.get<{ messages: { role: string; content: string }[] }>(`/chat/sessions/${s.id}`);
-        for (const m of full.messages) {
-          if (m.role === 'user' && !allPrompts.includes(m.content)) {
-            allPrompts.push(m.content);
+        // Collect user messages in reverse (newest first within session)
+        const userMsgs = full.messages.filter(m => m.role === 'user' && typeof m.content === 'string');
+        for (let i = userMsgs.length - 1; i >= 0; i--) {
+          if (!allPrompts.includes(userMsgs[i].content)) {
+            allPrompts.push(userMsgs[i].content);
           }
         }
       }
-      setPromptHistory(allPrompts.reverse()); // most recent first
+      // allPrompts is already newest-first (newest session first, newest msg first)
+      setPromptHistory(prev => {
+        // Merge: keep any current-session prompts at the front
+        const merged = [...prev.filter(p => !allPrompts.includes(p)), ...allPrompts];
+        // But actually prev (from sendMessage) should take priority
+        const final = [...prev];
+        for (const p of allPrompts) {
+          if (!final.includes(p)) final.push(p);
+        }
+        return final.slice(0, 100);
+      });
     } catch { }
   }
 

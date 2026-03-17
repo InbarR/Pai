@@ -138,13 +138,13 @@ export default function Layout({ children }: { children: ReactNode }) {
             </div>
             <div className="mode-switcher">
               <button className={`mode-btn ${mode === 'sidecar' ? 'active' : ''}`} onClick={goSidecar} title="Sidecar">
-                <svg width="12" height="12" viewBox="0 0 16 16"><rect x="9" y="1" width="6" height="14" rx="1" fill="currentColor"/><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
+                <span className="mode-icon"><span className="mode-fill" style={{ width: '35%', left: 'auto', right: 0 }} /></span>
               </button>
               <button className={`mode-btn ${mode === 'wide' ? 'active' : ''}`} onClick={goWide} title="Wide chat">
-                <svg width="12" height="12" viewBox="0 0 16 16"><rect x="6" y="1" width="9" height="14" rx="1" fill="currentColor"/><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
+                <span className="mode-icon"><span className="mode-fill" style={{ width: '60%', left: 'auto', right: 0 }} /></span>
               </button>
               <button className={`mode-btn ${mode === 'full' ? 'active' : ''}`} onClick={goFull} title="Full app">
-                <svg width="12" height="12" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="2" fill="currentColor" opacity="0.3"/><rect x="1" y="1" width="14" height="14" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5"/></svg>
+                <span className="mode-icon"><span className="mode-fill" style={{ width: '100%' }} /></span>
               </button>
               <button className="mode-btn" onClick={() => { try { (window as any).pai?.hide?.(); } catch {} }} title="Hide (Esc)">—</button>
             </div>

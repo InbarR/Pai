@@ -277,12 +277,19 @@ function watchNotifications() {
             try {
               const data = JSON.parse(eventData);
               if (eventType === 'reminder-due') {
+                const reminderTitle = data.title || 'You have a reminder';
                 const notif = new Notification({
                   title: 'Pai Reminder',
-                  body: data.title || 'You have a reminder',
+                  body: reminderTitle,
                   icon: path.join(__dirname, 'icon.png'),
                 });
-                notif.on('click', () => popUp());
+                notif.on('click', () => {
+                  popUp();
+                  // Send reminder to chat so Pai can suggest actions
+                  mainWindow.webContents.executeJavaScript(`
+                    window.dispatchEvent(new CustomEvent('pai-auto-chat', { detail: ${JSON.stringify(JSON.stringify(`I have a reminder: "${reminderTitle}". Help me with this — suggest what I should do or draft what's needed.`))} }));
+                  `).catch(() => {});
+                });
                 notif.show();
               } else if (eventType === 'meeting-soon') {
                 const notif = new Notification({
@@ -290,7 +297,13 @@ function watchNotifications() {
                   body: `Starting at ${new Date(data.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
                   icon: path.join(__dirname, 'icon.png'),
                 });
-                notif.on('click', () => popUp());
+                const meetingSubject = data.subject || 'Upcoming meeting';
+                notif.on('click', () => {
+                  popUp();
+                  mainWindow.webContents.executeJavaScript(`
+                    window.dispatchEvent(new CustomEvent('pai-auto-chat', { detail: ${JSON.stringify(JSON.stringify(`My meeting "${meetingSubject}" is starting soon. Help me prepare — what should I know?`))} }));
+                  `).catch(() => {});
+                });
                 notif.show();
               }
             } catch {}

@@ -79,7 +79,8 @@ READ actions (query data):
 - {"type": "get_calendar_upcoming", "days": 7} — get upcoming meetings
 - {"type": "ask_workiq", "query": "..."} — query Microsoft 365 data using WorkIQ (emails, meetings, documents, Teams messages, people). Use this for complex queries across M365.
 - {"type": "get_email_body", "entryId": "..."} — get full body of a specific email (use entryId from search results)
-- {"type": "open_draft", "to": "email@...", "subject": "...", "body": "<html>...</html>", "cc": "email@..."} — compose a new email and open it in Outlook desktop app
+- {"type": "draft_mail", "to": "email@...", "subject": "...", "body": "plain text body", "cc": "email@..."} — draft an email and show it in chat for review. The user can then ask to send or edit it.
+- {"type": "open_draft", "to": "email@...", "subject": "...", "body": "<html>...</html>", "cc": "email@..."} — open a compose window in Outlook desktop app (only when user explicitly asks to open in Outlook)
 
 CRITICAL RULES:
 - When the user asks to add/create something, you MUST include the ACTION block immediately — never say "let me do that" without including the action.
@@ -91,7 +92,9 @@ CRITICAL RULES:
 - If the user asks about a person, ALWAYS use search_emails or ask_workiq to find info. Never say you can't find someone without trying.
 - When showing calendar/meeting info, if a meeting has a joinUrl, format it as: **[Meeting Name](joinUrl)** so it's clickable. Always include the join link.
 - Support Hebrew and English — respond in the same language the user used.
-- For people lookups, prefer search_emails first (faster), then ask_workiq for deeper M365 data.`;
+- For people lookups, prefer search_emails first (faster), then ask_workiq for deeper M365 data.
+- When the user says "draft mail", "dm", "write an email", or "prepare a mail" — use draft_mail to compose it and show it in chat. Do NOT open Outlook unless the user explicitly says "open in Outlook".
+- After showing a draft, ask if the user wants to edit it or open it in Outlook to send.`;
 
 // Execute an action
 async function executeAction(action: any): Promise<{ success: boolean; message: string; data?: any }> {
@@ -177,6 +180,13 @@ async function executeAction(action: any): Promise<{ success: boolean; message: 
       case 'get_email_body': {
         const emailBody = runBridge(`email-body "${(action.entryId || '').replace(/"/g, '')}"`);
         return { success: true, message: 'Email body retrieved.', data: emailBody };
+      }
+      case 'draft_mail': {
+        // Return draft in chat — don't open Outlook
+        return {
+          success: true,
+          message: `**Draft Email**\n\n**To:** ${action.to || '(specify recipient)'}\n${action.cc ? `**CC:** ${action.cc}\n` : ''}**Subject:** ${action.subject || '(no subject)'}\n\n---\n\n${action.body || ''}`,
+        };
       }
       case 'open_draft': {
         const to = (action.to || '').replace(/"/g, '');

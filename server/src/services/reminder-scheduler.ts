@@ -39,13 +39,17 @@ export function startReminderScheduler() {
   // Reminder check — every 30s
   setInterval(() => {
     try {
-      const now = new Date().toISOString();
+      const now = new Date();
+      const fiveMinAgo = new Date(now.getTime() - 5 * 60_000).toISOString();
+      const nowStr = now.toISOString();
+      // Only get reminders due in the last 5 minutes (not ancient ones)
       const dueReminders: any[] = db.prepare(`
         SELECT * FROM Reminders
         WHERE isDismissed = 0
           AND dueAt <= ?
+          AND dueAt >= ?
           AND (snoozedUntil IS NULL OR snoozedUntil <= ?)
-      `).all(now, now);
+      `).all(nowStr, fiveMinAgo, nowStr);
 
       for (const reminder of dueReminders) {
         if (notifiedIds.has(reminder.id)) continue;
