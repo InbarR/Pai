@@ -177,10 +177,11 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="brand-dot" />
           <h1>Brian</h1>
         </div>
-        <nav className={altHeld ? 'alt-held' : ''}>
+        <nav className={`sidebar-nav ${altHeld ? 'alt-held' : ''}`}>
           {navItems.map(({ to, label, icon: Icon, count }, idx) => (
             <NavLink key={to} to={to} end={to === '/'} title={`${label} (Alt+${idx + 1})`}
-              className={({ isActive }) => isActive ? 'active' : ''}>
+              data-tooltip={label}
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
               <span className="nav-shortcut">[{idx + 1}]</span>
               <Icon size={18} />
               <span>{label}</span>
@@ -200,7 +201,9 @@ export default function Layout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main className="content" style={chatOpen ? { marginRight: chatWidth } : undefined}>{children}</main>
+      <main className="content" style={chatOpen ? { marginRight: chatWidth } : undefined}>
+        <div className="page-transition" key={location.pathname}>{children}</div>
+      </main>
 
       {!chatOpen && (
         <button className="chat-edge-toggle" onClick={() => setChatOpen(true)} title="Open chat">

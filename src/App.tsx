@@ -8,6 +8,7 @@ import FilesPage from './components/files/FilesPage';
 import PeoplePage from './components/people/PeoplePage';
 import SettingsPage from './components/settings/SettingsPage';
 import BrianMascot from './components/chat/BrianMascot';
+import ToastContainer from './components/ui/Toast';
 import { useNotifications } from './hooks/useNotifications';
 import { X, Clock, CheckCircle2, MessageCircle } from 'lucide-react';
 import { api } from './api/client';
@@ -173,6 +174,7 @@ export default function App() {
           </div>
         </div>
       )}
+      <ToastContainer />
     </>
   );
 }

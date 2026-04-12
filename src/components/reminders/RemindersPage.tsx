@@ -59,7 +59,7 @@ export default function RemindersPage() {
       </div>
 
       <div className="card-form">
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>New Reminder</div>
+        <div className="font-semibold mb-2">New Reminder</div>
         <div className="form-row">
           <input
             placeholder="Reminder title..."
@@ -67,8 +67,8 @@ export default function RemindersPage() {
             onChange={e => setTitle(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && title && dueDate && addMutation.mutate()}
           />
-          <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={{ width: 160 }} />
-          <input type="time" value={dueTime} onChange={e => setDueTime(e.target.value)} style={{ width: 100 }} />
+          <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="input-date" />
+          <input type="time" value={dueTime} onChange={e => setDueTime(e.target.value)} className="input-time" />
           <button onClick={() => addMutation.mutate()} disabled={!title || !dueDate}>Add</button>
         </div>
         <div className="form-row mt-2">
@@ -81,7 +81,7 @@ export default function RemindersPage() {
             <input type="checkbox" checked={isRecurring} onChange={e => setIsRecurring(e.target.checked)} />
             Recurring
           </label>
-          <select value={recurrenceRule} onChange={e => setRecurrenceRule(e.target.value)} disabled={!isRecurring} style={{ width: 100 }}>
+          <select value={recurrenceRule} onChange={e => setRecurrenceRule(e.target.value)} disabled={!isRecurring} className="input-select">
             <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
@@ -94,7 +94,7 @@ export default function RemindersPage() {
         return (
           <div key={r.id} className="card flex justify-between items-center">
             <div>
-              <div style={{ fontWeight: 600, color: isPast ? 'var(--orange)' : 'inherit' }}>
+            <div className={`font-semibold ${isPast ? 'text-overdue' : ''}`}>
                 {r.title}
               </div>
               {r.description && <div className="text-small text-secondary">{r.description}</div>}
@@ -112,12 +112,12 @@ export default function RemindersPage() {
                   <button className="secondary" onClick={() => dismissMutation.mutate(r.id)}>Dismiss</button>
                 </>
               )}
-              <button className="ghost" style={{ color: 'var(--red)' }} onClick={() => deleteMutation.mutate(r.id)}>Delete</button>
+              <button className="ghost text-danger" onClick={() => deleteMutation.mutate(r.id)}>Delete</button>
             </div>
           </div>
         );
       })}
-      {reminders.length === 0 && <div className="text-muted">No reminders</div>}
+      {reminders.length === 0 && <div className="empty-inline">No reminders</div>}
     </div>
   );
 }
