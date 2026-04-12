@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { DashboardData } from '../../api/types';
-import { Bell, CheckSquare, BookOpen, Mail, StickyNote, Plus, ArrowRight, Clock, AlertTriangle } from 'lucide-react';
+import { Bell, CheckSquare, BookOpen, Mail, StickyNote, Plus, ArrowRight, Clock, AlertTriangle, Calendar, Video, MapPin, ExternalLink } from 'lucide-react';
 
 const statusLabel = ['To Do', 'In Progress', 'Done'];
 const statusClass = ['todo', 'in-progress', 'done'];
@@ -50,6 +50,14 @@ export default function DashboardPage() {
     refetchInterval: 30_000,
   });
 
+  const { data: settings } = useQuery({
+    queryKey: ['assistant-settings'],
+    queryFn: () => api.get<any>('/chat/assistant-settings'),
+    staleTime: 60_000,
+  });
+
+  const userName = settings?.user_name || '';
+
   if (isLoading || !data) {
     return (
       <div className="hero-loading">
@@ -67,7 +75,7 @@ export default function DashboardPage() {
       {/* Hero greeting */}
       <div className="hero">
         <div className="hero-text">
-          <h1>{getGreeting()}, Inbar</h1>
+          <h1>{getGreeting()}{userName ? `, ${userName}` : ''}</h1>
           <p className="hero-date">{getTimeOfDay()}</p>
         </div>
       </div>
@@ -92,7 +100,7 @@ export default function DashboardPage() {
         <button className="quick-action" onClick={() => navigate('/reminders')}>
           <Bell size={18} /> Set Reminder
         </button>
-        <button className="quick-action" onClick={() => navigate('/tasks')}>
+        <button className="quick-action" onClick={() => navigate('/notes')}>
           <CheckSquare size={18} /> Add Task
         </button>
         <button className="quick-action" onClick={() => navigate('/reading')}>
@@ -115,7 +123,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="glance-card green" onClick={() => navigate('/tasks')}>
+        <div className="glance-card green" onClick={() => navigate('/notes')}>
           <div className="glance-top">
             <CheckSquare size={20} />
             <span className="glance-count">{data.openTaskCount}</span>
@@ -143,6 +151,60 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Today's Meetings */}
+      {data.todayMeetings?.length > 0 && (
+        <div className="focus-section">
+          <div className="focus-header">
+            <h3><Calendar size={16} style={{ marginRight: 6, verticalAlign: -2 }} />Today's Meetings</h3>
+            <span className="text-muted" style={{ fontSize: 12 }}>{data.todayMeetings.length} meeting{data.todayMeetings.length > 1 ? 's' : ''}</span>
+          </div>
+          {data.todayMeetings.map((m, i) => {
+            const start = new Date(m.start);
+            const end = new Date(m.end);
+            const now = new Date();
+            const isPast = end < now;
+            const isNow = start <= now && end >= now;
+            const timeStr = start.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            const endStr = end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            const duration = Math.round((end.getTime() - start.getTime()) / 60000);
+
+            return (
+              <div key={i} className={`meeting-item ${isPast ? 'past' : ''} ${isNow ? 'now' : ''}`}>
+                <div className="meeting-time">
+                  <span className="meeting-time-start">{timeStr}</span>
+                  <span className="meeting-time-duration">{duration}m</span>
+                </div>
+                <div className="meeting-details">
+                  <div className="meeting-title">
+                    {m.joinUrl ? (
+                      <a href={m.joinUrl} target="_blank" rel="noopener noreferrer" className="meeting-link">
+                        {m.subject}
+                        {isNow && <span className="meeting-live-badge">LIVE</span>}
+                      </a>
+                    ) : (
+                      <span>{m.subject}{isNow && <span className="meeting-live-badge">LIVE</span>}</span>
+                    )}
+                  </div>
+                  <div className="meeting-meta">
+                    {m.location && <span><MapPin size={11} /> {m.location}</span>}
+                    {m.isOnline && !m.location && <span><Video size={11} /> Online</span>}
+                    {m.organizer && <span style={{ marginLeft: m.location || m.isOnline ? 8 : 0 }}>{m.organizer}</span>}
+                  </div>
+                </div>
+                {m.joinUrl && !isPast && (
+                  <a href={m.joinUrl} target="_blank" rel="noopener noreferrer"
+                    className={`meeting-join-btn ${isNow ? 'live' : ''}`}
+                    title={isNow ? 'Join now' : 'Join meeting'}>
+                    <Video size={14} />
+                    <span className="meeting-join-label">{isNow ? 'Join' : 'Join'}</span>
+                  </a>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Today's focus sections */}
       {data.upcomingReminders.length > 0 && (
         <div className="focus-section">
@@ -169,7 +231,7 @@ export default function DashboardPage() {
 
       {data.recentTasks.length > 0 && (
         <div className="focus-section">
-          <div className="focus-header" onClick={() => navigate('/tasks')}>
+          <div className="focus-header" onClick={() => navigate('/notes')}>
             <h3>Active Tasks</h3>
             <ArrowRight size={16} />
           </div>

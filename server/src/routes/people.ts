@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import db from '../db';
-import { searchPeople, getMyTeam, getTopPeople, enrichPerson } from '../services/people';
+import { searchPeople, getMyTeam, getTopPeople, enrichPerson, getDirectReports, getManagerChain } from '../services/people';
 
 const router = Router();
 
@@ -41,6 +41,26 @@ router.get('/search', async (req, res) => {
   try {
     const results = await searchPeople(q);
     res.json(results);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Direct reports of a person
+router.get('/reports/:nameOrAlias', async (req, res) => {
+  try {
+    const reports = await getDirectReports(req.params.nameOrAlias);
+    res.json(reports);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Manager chain (up to 5 levels)
+router.get('/chain/:nameOrAlias', async (req, res) => {
+  try {
+    const chain = await getManagerChain(req.params.nameOrAlias);
+    res.json(chain);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

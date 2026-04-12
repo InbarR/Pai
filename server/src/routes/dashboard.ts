@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import db from '../db';
+import { getTodayCalendar } from '../services/graph';
 
 const router = Router();
 
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const now = new Date().toISOString();
 
   const activeReminderCount = (db.prepare(
@@ -46,6 +47,21 @@ router.get('/', (req, res) => {
     'SELECT * FROM ImportantEmails ORDER BY receivedAt DESC LIMIT 5'
   ).all();
 
+  // Today's meetings from Outlook
+  let todayMeetings: any[] = [];
+  try {
+    const events = await getTodayCalendar();
+    todayMeetings = (events || []).map((e: any) => ({
+      subject: e.subject,
+      start: e.start,
+      end: e.end,
+      location: e.location || '',
+      organizer: e.organizer || '',
+      isOnline: e.isOnline || false,
+      joinUrl: e.joinUrl || '',
+    }));
+  } catch { /* Outlook may not be running */ }
+
   res.json({
     activeReminderCount,
     nextReminder,
@@ -57,6 +73,7 @@ router.get('/', (req, res) => {
     upcomingReminders,
     recentTasks,
     recentEmails,
+    todayMeetings,
   });
 });
 

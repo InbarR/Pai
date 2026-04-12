@@ -70,6 +70,7 @@ export default function EmailsPage() {
   const { data: folderTree } = useQuery({
     queryKey: ['email-folders'],
     queryFn: () => api.get<FolderNode>('/emails/folders'),
+    staleTime: 300_000, // cache for 5 min
   });
 
   // When a folder is selected, fetch emails live from Outlook. Otherwise show synced DB emails.
@@ -82,7 +83,15 @@ export default function EmailsPage() {
   const { data: syncedEmails = [], isLoading } = useQuery({
     queryKey: ['emails'],
     queryFn: () => api.get<EmailExt[]>('/emails'),
+    refetchInterval: 120_000, // refresh every 2 min
   });
+
+  // Auto-sync on first load if authenticated
+  const [autoSynced, setAutoSynced] = useState(false);
+  if (authStatus?.authenticated && !autoSynced && syncedEmails.length === 0) {
+    setAutoSynced(true);
+    api.post('/emails/sync').then(() => qc.invalidateQueries({ queryKey: ['emails'] })).catch(() => {});
+  }
 
   const allEmails: any[] = selectedFolder ? folderEmails : syncedEmails;
 
@@ -134,7 +143,7 @@ export default function EmailsPage() {
       {/* Folder tree */}
       <div className="email-folders-panel">
         <div style={{ padding: '10px 10px 6px' }}>
-          <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>Folders</span>
+          <span className="section-label">Folders</span>
         </div>
         <div
           className={`folder-item ${selectedFolder === null ? 'active' : ''}`}
@@ -199,7 +208,7 @@ export default function EmailsPage() {
             );
           })}
           {emails.length === 0 && !isLoading && (
-            <div className="text-muted text-small" style={{ padding: 16, textAlign: 'center' }}>
+            <div className="empty-inline">
               {search ? 'No matches' : 'No emails'}
             </div>
           )}

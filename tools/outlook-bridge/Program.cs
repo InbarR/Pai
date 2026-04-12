@@ -60,6 +60,15 @@ class Program
                     string entryId = args.Length > 1 ? args[1] : "";
                     Console.Write(GetEmailBody(ns, entryId));
                     break;
+                case "open-email":
+                    string openId = args.Length > 1 ? args[1] : "";
+                    if (!string.IsNullOrEmpty(openId))
+                    {
+                        var openItem = ns.GetItemFromID(openId);
+                        if (openItem is MailItem openMail) openMail.Display(false);
+                    }
+                    Console.Write(JsonSerializer.Serialize(new { success = true }, JsonOpts));
+                    break;
                 case "search-email":
                     string query = args.Length > 1 ? args[1] : "";
                     int searchCount = args.Length > 2 && int.TryParse(args[2], out var sc) ? sc : 20;
@@ -73,6 +82,19 @@ class Program
                     string cc = args.Length > 4 ? args[4] : "";
                     OpenDraft(app, to, subject, body, cc);
                     Console.Write(JsonSerializer.Serialize(new { success = true, message = "Draft opened in Outlook" }, JsonOpts));
+                    break;
+                case "create-event":
+                    // args: create-event "subject" "start" "end" "location" "attendees" "body" "isOnline" "private"
+                    string evtSubject = args.Length > 1 ? args[1] : "";
+                    string evtStart = args.Length > 2 ? args[2] : "";
+                    string evtEnd = args.Length > 3 ? args[3] : "";
+                    string evtLocation = args.Length > 4 ? args[4] : "";
+                    string evtAttendees = args.Length > 5 ? args[5] : "";
+                    string evtBody = args.Length > 6 ? args[6] : "";
+                    bool evtOnline = args.Length > 7 && args[7] == "true";
+                    bool evtPrivate = args.Length > 8 && args[8] == "true";
+                    CreateEvent(app, evtSubject, evtStart, evtEnd, evtLocation, evtAttendees, evtBody, evtOnline, evtPrivate);
+                    Console.Write(JsonSerializer.Serialize(new { success = true, message = "Meeting created" }, JsonOpts));
                     break;
                 default:
                     Console.Error.WriteLine("Unknown command: " + args[0]);
@@ -109,7 +131,7 @@ class Program
                 id = Safe(() => mail.EntryID) ?? "",
                 subject = Safe(() => mail.Subject) ?? "(no subject)",
                 fromName = Safe(() => mail.SenderName) ?? "Unknown",
-                fromEmail = Safe(() => mail.SenderEmailAddress) ?? "",
+                fromEmail = GetSmtpAddress(mail),
                 receivedAt = Safe(() => mail.ReceivedTime.ToString("o")) ?? "",
                 bodyPreview = Safe(() => mail.Body != null && mail.Body.Length > 200 ? mail.Body.Substring(0, 200) : mail.Body) ?? "",
                 isRead = !SafeBool(() => mail.UnRead),
@@ -154,6 +176,39 @@ class Program
         mail.Display(false); // Opens the compose window
     }
 
+    static void CreateEvent(Application app, string subject, string start, string end, string location, string attendees, string body, bool isOnline, bool isPrivate = false)
+    {
+        var appt = (AppointmentItem)app.CreateItem(OlItemType.olAppointmentItem);
+        appt.Subject = subject;
+        appt.Start = DateTime.Parse(start);
+        appt.End = !string.IsNullOrEmpty(end) ? DateTime.Parse(end) : DateTime.Parse(start).AddMinutes(30);
+        if (!string.IsNullOrEmpty(location)) appt.Location = location;
+        if (!string.IsNullOrEmpty(body)) appt.Body = body;
+        if (isPrivate) appt.Sensitivity = OlSensitivity.olPrivate;
+
+        // Add attendees — this makes it a meeting request
+        if (!string.IsNullOrEmpty(attendees))
+        {
+            appt.MeetingStatus = OlMeetingStatus.olMeeting;
+            foreach (var email in attendees.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var trimmed = email.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    var recipient = appt.Recipients.Add(trimmed);
+                    recipient.Type = (int)OlMeetingRecipientType.olRequired;
+                }
+            }
+            appt.Recipients.ResolveAll();
+        }
+
+        appt.Save();
+        if (appt.MeetingStatus == OlMeetingStatus.olMeeting)
+        {
+            appt.Send(); // Send meeting invites
+        }
+    }
+
     static string SearchEmails(NameSpace ns, string query, int count)
     {
         var inbox = ns.GetDefaultFolder(OlDefaultFolders.olFolderInbox);
@@ -183,7 +238,7 @@ class Program
                     id = Safe(() => mail.EntryID) ?? "",
                     subject,
                     fromName = from,
-                    fromEmail = Safe(() => mail.SenderEmailAddress) ?? "",
+                    fromEmail = GetSmtpAddress(mail),
                     receivedAt = Safe(() => mail.ReceivedTime.ToString("o")) ?? "",
                     bodyPreview = Safe(() => mail.Body != null && mail.Body.Length > 200 ? mail.Body.Substring(0, 200) : mail.Body) ?? "",
                     isRead = !SafeBool(() => mail.UnRead),
@@ -225,9 +280,15 @@ class Program
                 }
                 catch { }
 
-                // Extract join URL from body
+                // Extract join URL from body (try HTML first, then plain text)
                 string joinUrl = "";
-                string body = Safe(() => appt.Body) ?? "";
+                string htmlBody = "";
+                try {
+                    var prop = appt.GetType().GetProperty("HTMLBody");
+                    if (prop != null) htmlBody = (string)(prop.GetValue(appt) ?? "");
+                } catch { }
+                string plainBody = Safe(() => appt.Body) ?? "";
+                string body = !string.IsNullOrEmpty(htmlBody) ? htmlBody : plainBody;
                 foreach (var pattern in new[] { "https://teams.microsoft.com/l/meetup-join/", "https://teams.live.com/meet/", "https://zoom.us/j/", "https://meet.google.com/" })
                 {
                     int idx2 = body.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
@@ -315,7 +376,7 @@ class Program
                     id = Safe(() => mail.EntryID) ?? "",
                     subject = Safe(() => mail.Subject) ?? "(no subject)",
                     fromName = Safe(() => mail.SenderName) ?? "Unknown",
-                    fromEmail = Safe(() => mail.SenderEmailAddress) ?? "",
+                    fromEmail = GetSmtpAddress(mail),
                     receivedAt = Safe(() => mail.ReceivedTime.ToString("o")) ?? "",
                     bodyPreview = Safe(() => mail.Body != null && mail.Body.Length > 200 ? mail.Body.Substring(0, 200) : mail.Body) ?? "",
                     isRead = !SafeBool(() => mail.UnRead),
@@ -373,7 +434,7 @@ class Program
                     id = Safe(() => mail.EntryID) ?? "",
                     subject = Safe(() => mail.Subject) ?? "",
                     fromName = Safe(() => mail.SenderName) ?? "",
-                    fromEmail = Safe(() => mail.SenderEmailAddress) ?? "",
+                    fromEmail = GetSmtpAddress(mail),
                     receivedAt = Safe(() => mail.ReceivedTime.ToString("o")) ?? "",
                     to = Safe(() => mail.To) ?? "",
                     cc = Safe(() => mail.CC) ?? "",
@@ -396,6 +457,33 @@ class Program
     {
         try { return fn(); }
         catch { return null; }
+    }
+
+    static string GetSmtpAddress(MailItem mail)
+    {
+        try
+        {
+            // If it's already SMTP, return directly
+            if (Safe(() => mail.SenderEmailType) == "SMTP")
+                return mail.SenderEmailAddress;
+            // For Exchange users, resolve via Sender property
+            var sender = mail.Sender;
+            if (sender != null)
+            {
+                var exUser = sender.GetExchangeUser();
+                if (exUser != null)
+                    return exUser.PrimarySmtpAddress;
+            }
+            // Fallback: try PropertyAccessor
+            try
+            {
+                return mail.PropertyAccessor.GetProperty("http://schemas.microsoft.com/mapi/proptag/0x39FE001E") as string;
+            }
+            catch { }
+        }
+        catch { }
+        // Last resort: return raw address
+        return Safe(() => mail.SenderEmailAddress) ?? "";
     }
 
     static bool SafeBool(Func<bool> fn)

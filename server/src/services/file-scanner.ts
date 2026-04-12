@@ -9,7 +9,7 @@ const execAsync = promisify(exec);
 export interface ScannedDoc {
   title: string;
   path: string;
-  type: 'doc' | 'ppt' | 'xls' | 'pdf' | 'other';
+  type: 'doc' | 'ppt' | 'xls' | 'pdf' | 'loop' | 'onenote' | 'visio' | 'url' | 'video' | 'image' | 'other';
   source: 'sharepoint' | 'onedrive' | 'local' | 'teams' | 'other';
   app?: string;
   owner?: string;
@@ -78,14 +78,14 @@ else { Write-Output ($results | ConvertTo-Json -Compress) }
 
 function detectSource(filePath: string): ScannedDoc['source'] {
   const lower = filePath.toLowerCase();
-  if (lower.includes('sharepoint.com') && !lower.includes('-my.sharepoint.com'))
-    return 'sharepoint';
   if (
     lower.includes('onedrive') ||
     lower.includes('1drv.ms') ||
-    lower.includes('-my.sharepoint.com')
+    lower.match(/-my\.sharepoint[^/]*\.com/)
   )
     return 'onedrive';
+  if (lower.match(/sharepoint[^/]*\.com/))
+    return 'sharepoint';
   if (lower.includes('teams.microsoft.com')) return 'teams';
   if (lower.startsWith('http')) return 'other';
   return 'local';
@@ -97,6 +97,12 @@ function detectType(filePath: string): ScannedDoc['type'] {
   if (lower.match(/\.pptx?m?(\?|#|$)/)) return 'ppt';
   if (lower.match(/\.xlsx?(\?|#|$)/)) return 'xls';
   if (lower.match(/\.pdf(\?|#|$)/)) return 'pdf';
+  if (lower.includes('.loop') || lower.includes('loop.microsoft.com') || lower.includes('/loop/')) return 'loop';
+  if (lower.match(/\.one(\?|#|$)/) || lower.includes('onenote.com')) return 'onenote';
+  if (lower.match(/\.vsdx?(\?|#|$)/)) return 'visio';
+  if (lower.match(/\.url(\?|#|$)/) || lower.match(/\.webloc(\?|#|$)/)) return 'url';
+  if (lower.match(/\.(mp4|mkv|avi|mov|webm)(\?|#|$)/)) return 'video';
+  if (lower.match(/\.(png|jpg|jpeg|gif|svg|bmp|webp)(\?|#|$)/)) return 'image';
   return 'other';
 }
 
@@ -318,8 +324,8 @@ foreach ($bp in $browserProcs) {
   if ($comTitles.ContainsKey($clean.ToLower())) { continue }
 
   # Check if it looks like a document
-  $docHints = @('.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.pdf',
-    'Word', 'Excel', 'PowerPoint', 'SharePoint', 'OneDrive')
+  $docHints = @('.docx', '.doc', '.pptx', '.ppt', '.xlsx', '.xls', '.pdf', '.loop', '.one', '.vsdx',
+    'Word', 'Excel', 'PowerPoint', 'SharePoint', 'OneDrive', 'Loop', 'OneNote', 'Visio')
   $isDoc = $false
   foreach ($h in $docHints) {
     if ($clean -like "*$h*" -or $t -like "*$h*") { $isDoc = $true; break }
@@ -331,6 +337,9 @@ foreach ($bp in $browserProcs) {
   elseif ($t -match 'PowerPoint' -or $clean -match '\\.(pptx?|ppt)') { $type = 'ppt' }
   elseif ($t -match 'Excel' -or $clean -match '\\.(xlsx?|xls)') { $type = 'xls' }
   elseif ($clean -match '\\.pdf') { $type = 'pdf' }
+  elseif ($t -match 'Loop' -or $clean -match '\\.loop') { $type = 'loop' }
+  elseif ($t -match 'OneNote' -or $clean -match '\\.one') { $type = 'onenote' }
+  elseif ($t -match 'Visio' -or $clean -match '\\.vsdx?') { $type = 'visio' }
 
   $mruPath = ''
   if ($mruLookup.ContainsKey($clean.ToLower())) { $mruPath = $mruLookup[$clean.ToLower()] }

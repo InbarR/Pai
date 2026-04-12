@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
-import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square, Copy, X } from 'lucide-react';
-import PaiMascot from './PaiMascot';
+import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square, Copy, X, Mic, MicOff, Maximize2 } from 'lucide-react';
+import BrianMascot from './BrianMascot';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -17,24 +18,49 @@ interface ChatSession {
   updatedAt: string;
 }
 
-export default function ChatPanel() {
+const ALL_SUGGESTIONS = [
+  'What should I focus on today?',
+  'Help me plan my week',
+  'Summarize my recent emails',
+  'What meetings do I have today?',
+  'Show me my open tasks',
+  'Draft a follow-up email',
+  'What did I miss yesterday?',
+  'Who emailed me recently?',
+  'Remind me about something',
+  'What\'s on my calendar this week?',
+  'Help me prioritize my tasks',
+  'Any urgent emails I should handle?',
+];
+
+function pickRandom<T>(arr: T[], count: number): T[] {
+  const shuffled = [...arr].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
+export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () => void } = {}) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [sessionId, setSessionId] = useState<number | null>(() => {
-    const saved = sessionStorage.getItem('pai-session-id');
+    const saved = sessionStorage.getItem('brian-session-id');
     return saved ? parseInt(saved) : null;
   });
   const [messages, setMessages] = useState<Message[]>(() => {
-    try { return JSON.parse(sessionStorage.getItem('pai-messages') || '[]'); } catch { return []; }
+    try { return JSON.parse(sessionStorage.getItem('brian-messages') || '[]'); } catch { return []; }
   });
   const [input, setInput] = useState('');
+  const [slashIdx, setSlashIdx] = useState(0);
   const [pastedImages, setPastedImages] = useState<{ data: string; name: string }[]>([]);
+  const [suggestions] = useState(() => pickRandom(ALL_SUGGESTIONS, 3));
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const [authPending, setAuthPending] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('');
-  const [model, setModelState] = useState(() => localStorage.getItem('pai-model') || 'gpt-4o');
-  const setModel = (m: string) => { setModelState(m); localStorage.setItem('pai-model', m); };
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const historyInputRef = useRef<HTMLInputElement>(null);
+  const [model, setModelState] = useState(() => localStorage.getItem('brian-model') || 'gpt-4o');
+  const setModel = (m: string) => { setModelState(m); localStorage.setItem('brian-model', m); };
   const [modelOpen, setModelOpen] = useState(false);
   const [modelFilter, setModelFilter] = useState('');
   const modelRef = useRef<HTMLDivElement>(null);
@@ -65,10 +91,81 @@ export default function ChatPanel() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
 
-  const { data: authStatus } = useQuery({
+  const startVoice = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Voice input is not supported in this browser. Use Chrome or Edge.' }]);
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = ''; // auto-detect language
+    let finalTranscript = '';
+
+    recognition.onresult = (event: any) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript;
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+      // Show interim results in the input field
+      setInput(prev => {
+        const base = prev.replace(/\s*\[\.\.\..*\]$/, ''); // remove previous interim
+        const combined = (finalTranscript || base) + (interim ? ` [... ${interim}]` : '');
+        return combined;
+      });
+    };
+
+    recognition.onend = () => {
+      // Clean up interim markers and set final text
+      setInput(prev => {
+        const cleaned = prev.replace(/\s*\[\.\.\..*\]$/, '').trim();
+        return cleaned;
+      });
+      setVoiceActive(false);
+      recognitionRef.current = null;
+      if (inputRef.current) {
+        inputRef.current.style.height = 'auto';
+        inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 150) + 'px';
+        inputRef.current.focus();
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error !== 'aborted') {
+        setMessages(prev => [...prev, { role: 'assistant', content: `Voice error: ${event.error}. Check microphone permissions.` }]);
+      }
+      setVoiceActive(false);
+      recognitionRef.current = null;
+    };
+
+    recognition.start();
+    recognitionRef.current = recognition;
+    setVoiceActive(true);
+  };
+
+  const stopVoice = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    recognitionRef.current = null;
+    setVoiceActive(false);
+  };
+
+  const { data: authStatus, isError: authError } = useQuery({
     queryKey: ['chat-auth'],
     queryFn: () => api.get<{ authenticated: boolean }>('/chat/auth'),
+    retry: 5,
+    retryDelay: 3000,
+    refetchInterval: 60_000,
     refetchInterval: authPending ? 3000 : false,
   });
 
@@ -77,7 +174,8 @@ export default function ChatPanel() {
     queryFn: () => api.get<ChatSession[]>('/chat/sessions'),
   });
 
-  const authenticated = authStatus?.authenticated ?? false;
+  // Default to true on error/loading — only show sign-in when server explicitly says not authenticated
+  const authenticated = authError ? true : (authStatus?.authenticated ?? true);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -87,28 +185,50 @@ export default function ChatPanel() {
     if (authenticated && authPending) setAuthPending(false);
   }, [authenticated, authPending]);
 
-  // Ctrl+N inside chat panel = new session
+  // Focus history input when panel opens
+  useEffect(() => {
+    if (showHistory) {
+      setHistoryIdx(-1);
+      setTimeout(() => historyInputRef.current?.focus(), 50);
+    }
+  }, [showHistory]);
+
+  // Scroll highlighted history item into view
+  useEffect(() => {
+    if (historyIdx >= 0) {
+      const el = document.querySelector('.chat-history-item.highlighted');
+      el?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [historyIdx]);
+
+  // Chat keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 'n' && panelRef.current?.contains(document.activeElement)) {
+      if (!panelRef.current) return;
+      if (e.ctrlKey && e.key === 'n') {
         e.preventDefault();
         e.stopPropagation();
         newSession();
       }
+      if (e.ctrlKey && e.key === 'h') {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowHistory(prev => !prev);
+      }
     };
-    window.addEventListener('keydown', handler, true); // capture phase to beat notes handler
+    window.addEventListener('keydown', handler, true);
     return () => window.removeEventListener('keydown', handler, true);
   }, []);
 
   // Persist chat state to sessionStorage
   useEffect(() => {
-    sessionStorage.setItem('pai-messages', JSON.stringify(
+    sessionStorage.setItem('brian-messages', JSON.stringify(
       messages
         .filter(m => m.content !== ':::thinking:::' && !m.content.startsWith(':::status:::'))
     ));
   }, [messages]);
   useEffect(() => {
-    if (sessionId) sessionStorage.setItem('pai-session-id', String(sessionId));
+    if (sessionId) sessionStorage.setItem('brian-session-id', String(sessionId));
   }, [sessionId]);
 
   // Auto-chat from notification clicks
@@ -117,17 +237,17 @@ export default function ChatPanel() {
       const msg = (e as CustomEvent).detail;
       if (msg && typeof msg === 'string') {
         // Directly trigger a send by setting input and using a flag
-        (window as any).__paiAutoSend = msg;
+        (window as any).__brianAutoSend = msg;
         setInput(msg);
       }
     };
-    window.addEventListener('pai-auto-chat', handler);
-    return () => window.removeEventListener('pai-auto-chat', handler);
+    window.addEventListener('brian-auto-chat', handler);
+    return () => window.removeEventListener('brian-auto-chat', handler);
   }, []);
   // Watch for auto-send flag
   useEffect(() => {
-    if ((window as any).__paiAutoSend && input === (window as any).__paiAutoSend) {
-      delete (window as any).__paiAutoSend;
+    if ((window as any).__brianAutoSend && input === (window as any).__brianAutoSend) {
+      delete (window as any).__brianAutoSend;
       sendMessage();
     }
   }, [input]);
@@ -181,8 +301,8 @@ export default function ChatPanel() {
     setSessionId(null);
     setMessages([]);
     setShowHistory(false);
-    sessionStorage.removeItem('pai-messages');
-    sessionStorage.removeItem('pai-session-id');
+    sessionStorage.removeItem('brian-messages');
+    sessionStorage.removeItem('brian-session-id');
     inputRef.current?.focus();
   }
 
@@ -250,7 +370,7 @@ export default function ChatPanel() {
     }
     setStreaming(false);
     // Remove thinking indicator if still showing
-    setMessages(prev => prev.filter(m => m.content !== ':::thinking:::'));
+    setMessages(prev => prev.filter(m => m.content !== ':::thinking:::' && !m.content.startsWith(':::status:::')));
   };
 
   const sendMessage = async () => {
@@ -275,7 +395,7 @@ export default function ChatPanel() {
     setPromptIdx(-1);
 
     const now = new Date().toISOString();
-    const cleanMessages = messages.filter(m => m.content !== ':::thinking:::');
+    const cleanMessages = messages.filter(m => m.content !== ':::thinking:::' && !m.content.startsWith(':::status:::'));
     const newMessages: Message[] = [...cleanMessages, { role: 'user', content: displayContent, timestamp: now }];
     setMessages([...newMessages, { role: 'assistant', content: ':::thinking:::', timestamp: now }]);
     setInput('');
@@ -286,6 +406,8 @@ export default function ChatPanel() {
     // Ensure session exists and save user message
     const sid = await ensureSession();
     await saveMessage(sid, 'user', text);
+
+    let lastResponseText = '';
 
     try {
       const controller = new AbortController();
@@ -391,6 +513,7 @@ export default function ChatPanel() {
 
       // Save assistant response
       if (assistantMsg) {
+        lastResponseText = assistantMsg;
         await saveMessage(sid, 'assistant', assistantMsg);
         refetchSessions();
       }
@@ -400,6 +523,7 @@ export default function ChatPanel() {
           messages: newMessages.map(m => ({ role: m.role, content: m.content })),
           model,
         });
+        lastResponseText = result.reply;
         setMessages(prev => [...prev, { role: 'assistant', content: result.reply }]);
         await saveMessage(sid, 'assistant', result.reply);
         refetchSessions();
@@ -412,13 +536,102 @@ export default function ChatPanel() {
     }
 
     setStreaming(false);
+    setMessages(prev => prev.filter(m => m.content !== ':::thinking:::' && !m.content.startsWith(':::status:::')));
     inputRef.current?.focus();
+
+    // Notify if window is not visible
+    if (lastResponseText) {
+      try {
+        const visible = await (window as any).brian?.isVisible?.().catch(() => true);
+        if (visible === false) {
+          (window as any).brian?.notify?.('Brian',
+            lastResponseText.replace(/\*\*/g, '').replace(/\[.*?\]\(.*?\)/g, '').substring(0, 120)
+          )?.catch?.(() => {});
+        }
+      } catch {}
+    }
+  };
+
+  const SLASH_COMMANDS = [
+    { cmd: '/add task', placeholder: '/add task ', desc: 'Add a new task' },
+    { cmd: '/add note', placeholder: '/add note ', desc: 'Add a new note' },
+    { cmd: '/add reminder', placeholder: '/add reminder ', desc: 'Add a reminder' },
+    { cmd: '/go tasks', placeholder: '/go tasks', desc: 'Open Tasks page' },
+    { cmd: '/go emails', placeholder: '/go emails', desc: 'Open Emails page' },
+    { cmd: '/go files', placeholder: '/go files', desc: 'Open Files page' },
+    { cmd: '/go people', placeholder: '/go people', desc: 'Open People page' },
+    { cmd: '/go day', placeholder: '/go day', desc: 'Open My Day' },
+    { cmd: '/new chat', placeholder: '/new chat', desc: 'Start a new chat session' },
+    { cmd: '/clear', placeholder: '/clear', desc: 'Clear current chat messages' },
+    { cmd: '/scan files', placeholder: '/scan files', desc: 'Rescan open & recent files' },
+  ];
+
+  const slashMatch = input.match(/^(\/\S*)/);
+  const slashFilter = slashMatch ? slashMatch[1].toLowerCase() : '';
+  const slashVisible = input.startsWith('/') && !input.includes(' ');
+  const slashFiltered = slashVisible
+    ? SLASH_COMMANDS.filter(c => c.cmd.startsWith(slashFilter))
+    : [];
+
+  const handleSlashCommand = (text: string): boolean => {
+    const t = text.trim();
+
+    const addTask = t.match(/^\/add\s+task\s+(.+)/i);
+    if (addTask) {
+      const title = addTask[1].trim();
+      api.post('/notes', { title, notebookId: 1, isTask: true }).then(() => {
+        qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); qc.invalidateQueries({ queryKey: ['notebooks'] });
+      });
+      setMessages(prev => [...prev, { role: 'assistant', content: `✓ Task added: **${title}**` }]);
+      setInput(''); return true;
+    }
+    const addNote = t.match(/^\/add\s+note\s+(.+)/i);
+    if (addNote) {
+      const title = addNote[1].trim();
+      api.post('/notes', { title, notebookId: 1, isTask: false }).then(() => {
+        qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); qc.invalidateQueries({ queryKey: ['notebooks'] });
+      });
+      setMessages(prev => [...prev, { role: 'assistant', content: `✓ Note added: **${title}**` }]);
+      setInput(''); return true;
+    }
+    const addReminder = t.match(/^\/add\s+reminder\s+(.+)/i);
+    if (addReminder) {
+      const title = addReminder[1].trim();
+      const dueAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      api.post('/reminders', { title, dueAt }).then(() => qc.invalidateQueries({ queryKey: ['reminders'] }));
+      setMessages(prev => [...prev, { role: 'assistant', content: `✓ Reminder set: **${title}**` }]);
+      setInput(''); return true;
+    }
+    if (/^\/go\s+tasks?$/i.test(t)) { navigate('/notes'); setInput(''); return true; }
+    if (/^\/go\s+emails?$/i.test(t)) { navigate('/emails'); setInput(''); return true; }
+    if (/^\/go\s+files?$/i.test(t)) { navigate('/files'); setInput(''); return true; }
+    if (/^\/go\s+people$/i.test(t)) { navigate('/people'); setInput(''); return true; }
+    if (/^\/go\s+day$/i.test(t)) { navigate('/'); setInput(''); return true; }
+    if (/^\/new\s+chat$/i.test(t)) { newSession(); setInput(''); return true; }
+    if (/^\/clear$/i.test(t)) { setMessages([]); setInput(''); return true; }
+    if (/^\/scan\s+files$/i.test(t)) {
+      api.post('/files/refresh').then(() => qc.invalidateQueries({ queryKey: ['files-open'] }));
+      setMessages(prev => [...prev, { role: 'assistant', content: '✓ File scan started' }]);
+      setInput(''); return true;
+    }
+    return false;
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (slashFiltered.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIdx(i => Math.min(i + 1, slashFiltered.length - 1)); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIdx(i => Math.max(i - 1, 0)); return; }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault();
+        setInput(slashFiltered[slashIdx]?.placeholder ?? slashFiltered[0].placeholder);
+        setSlashIdx(0);
+        return;
+      }
+      if (e.key === 'Escape') { setInput(''); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      if (!handleSlashCommand(input)) sendMessage();
     }
     // Up arrow cycles through prompt history
     if (e.key === 'ArrowUp' && promptHistory.length > 0) {
@@ -446,63 +659,79 @@ export default function ChatPanel() {
     }
   };
 
-  // History view
-  if (showHistory) {
-    const filtered = historyFilter
-      ? sessions.filter(s => s.title.toLowerCase().includes(historyFilter.toLowerCase()))
-      : sessions;
+  const historyFiltered = historyFilter
+    ? sessions.filter(s => s.title.toLowerCase().includes(historyFilter.toLowerCase()))
+    : sessions;
 
-    return (
-      <div className="chat-panel" ref={panelRef}>
+  return (
+    <div className="chat-panel" ref={panelRef}>
+      {/* History side panel */}
+      <div className={`chat-history-panel ${showHistory ? 'open' : ''}`}>
         <div className="chat-history-header">
+          <span style={{ fontWeight: 600, fontSize: 13 }}>Chat History</span>
           <button className="ghost" onClick={() => { setShowHistory(false); setHistoryFilter(''); }}>
-            <ArrowLeft size={16} /> Back
-          </button>
-          <button onClick={newSession} style={{ padding: '4px 12px', fontSize: 12 }}>
-            <Plus size={14} /> New Chat
+            <X size={14} />
           </button>
         </div>
-        <div style={{ padding: '8px 12px' }}>
+        <div style={{ padding: '6px 10px' }}>
           <input
+            ref={historyInputRef}
             placeholder="Filter chats..."
             value={historyFilter}
-            onChange={e => setHistoryFilter(e.target.value)}
-            style={{ width: '100%', fontSize: 13 }}
-            autoFocus
+            onChange={e => { setHistoryFilter(e.target.value); setHistoryIdx(-1); }}
+            style={{ width: '100%', fontSize: 12, padding: '5px 8px' }}
+            onKeyDown={e => {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setHistoryIdx(i => Math.min(i + 1, historyFiltered.length - 1));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setHistoryIdx(i => Math.max(i - 1, -1));
+              } else if (e.key === 'Enter' && historyIdx >= 0 && historyFiltered[historyIdx]) {
+                e.preventDefault();
+                loadSession(historyFiltered[historyIdx].id);
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setShowHistory(false);
+                setHistoryFilter('');
+                setHistoryIdx(-1);
+              }
+            }}
           />
         </div>
         <div className="chat-history-list">
-          {filtered.map(s => (
-            <div key={s.id} className="chat-history-item" onClick={() => loadSession(s.id)}>
+          {historyFiltered.map((s, i) => (
+            <div key={s.id} className={`chat-history-item ${sessionId === s.id ? 'active' : ''} ${historyIdx === i ? 'highlighted' : ''}`} onClick={() => loadSession(s.id)}>
               <div className="flex-1" style={{ minWidth: 0 }}>
-                <div className="truncate" style={{ fontSize: 13, fontWeight: 500 }}>{s.title}</div>
+                <div className="truncate" style={{ fontSize: 12, fontWeight: 500 }}>{s.title}</div>
                 <div className="text-xs text-muted">{new Date(s.updatedAt).toLocaleString()}</div>
               </div>
               <button className="ghost" onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(s.id); }}>
-                <Trash2 size={13} />
+                <Trash2 size={12} />
               </button>
             </div>
           ))}
-          {filtered.length === 0 && (
-            <div className="text-muted text-small" style={{ padding: 16 }}>
+          {historyFiltered.length === 0 && (
+            <div className="empty-inline">
               {historyFilter ? 'No matches' : 'No chat history yet'}
             </div>
           )}
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="chat-panel" ref={panelRef}>
       {/* Mini toolbar */}
       <div className="chat-toolbar">
-        <button className="ghost" onClick={() => setShowHistory(true)} title="Chat history">
+        <button className="ghost" onClick={() => setShowHistory(true)} title="Chat history (Ctrl+H)">
           <History size={14} />
         </button>
         <button className="ghost" onClick={newSession} title="New chat (Ctrl+N)">
           <Plus size={14} />
         </button>
+        {onChatFullscreen && (
+          <button className="ghost" onClick={onChatFullscreen} title="Fullscreen chat">
+            <Maximize2 size={14} />
+          </button>
+        )}
         <div className="model-picker" ref={modelRef}>
           <button
             className="model-picker-btn"
@@ -542,9 +771,9 @@ export default function ChatPanel() {
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-welcome">
-            <PaiMascot size={90} />
-            <h2>Hi, I'm Pai</h2>
-            <p>Your personal AI. Manage tasks, notes, reminders, search emails, or just chat.</p>
+            <BrianMascot size={90} />
+            <h2>Hi, I'm Brian</h2>
+            <p>Your second brain. Manage tasks, notes, reminders, search emails, or just chat.</p>
             {!authenticated && (
               <button
                 className="chat-login-btn"
@@ -556,15 +785,9 @@ export default function ChatPanel() {
               </button>
             )}
             <div className="chat-suggestions">
-              <button className="chat-suggestion" onClick={() => setInput('What should I focus on today?')}>
-                What should I focus on today?
-              </button>
-              <button className="chat-suggestion" onClick={() => setInput('Help me plan my week')}>
-                Help me plan my week
-              </button>
-              <button className="chat-suggestion" onClick={() => setInput('Summarize my recent emails')}>
-                Summarize my recent emails
-              </button>
+              {suggestions.map(s => (
+                <button key={s} className="chat-suggestion" onClick={() => setInput(s)}>{s}</button>
+              ))}
             </div>
           </div>
         )}
@@ -576,7 +799,7 @@ export default function ChatPanel() {
             return (
               <div key={i} className="chat-bubble assistant">
                 <div className="chat-avatar">
-                  <PaiMascot size={24} />
+                  <BrianMascot size={24} />
                 </div>
                 <div className="chat-thinking">
                   <div className="thinking-dots">
@@ -592,7 +815,7 @@ export default function ChatPanel() {
             <div key={i} className={`chat-bubble ${msg.role}`}>
               {msg.role === 'assistant' && (
                 <div className="chat-avatar">
-                  <PaiMascot size={24} />
+                  <BrianMascot size={24} />
                 </div>
               )}
               <div className="chat-bubble-wrap">
@@ -602,9 +825,27 @@ export default function ChatPanel() {
                       try {
                         const imgs = JSON.parse(line.slice(12));
                         return <div key={j} className="chat-images">{imgs.map((src: string, k: number) => (
-                          <img key={k} src={src} alt="Pasted" className="chat-pasted-image" />
+                          <img key={k} src={src} alt="Pasted" className="chat-pasted-image" onClick={() => setLightboxSrc(src)} />
                         ))}</div>;
                       } catch { return null; }
+                    }
+                    // Headings
+                    const headingMatch = line.match(/^(#{1,4})\s+(.+)/);
+                    if (headingMatch) {
+                      const level = headingMatch[1].length;
+                      const Tag = `h${Math.min(level + 1, 6)}` as any;
+                      return <Tag key={j} className="chat-heading">{renderMarkdownLine(headingMatch[2])}</Tag>;
+                    }
+                    // Bullet list items
+                    if (line.match(/^\s*[-*]\s+/)) {
+                      const text = line.replace(/^\s*[-*]\s+/, '');
+                      return <div key={j} className="chat-list-item">{renderMarkdownLine(text)}</div>;
+                    }
+                    // Numbered list items
+                    if (line.match(/^\s*\d+[.)]\s+/)) {
+                      const text = line.replace(/^\s*\d+[.)]\s+/, '');
+                      const num = line.match(/^\s*(\d+)/)?.[1];
+                      return <div key={j} className="chat-list-item numbered"><span className="chat-list-num">{num}.</span>{renderMarkdownLine(text)}</div>;
                     }
                     return <p key={j}>{renderMarkdownLine(line)}</p>;
                   })}
@@ -619,7 +860,7 @@ export default function ChatPanel() {
                 </button>
                 {msg.timestamp && (
                   <div className={`chat-timestamp ${msg.role}`}>
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </div>
                 )}
               </div>
@@ -641,12 +882,34 @@ export default function ChatPanel() {
           ))}
         </div>
       )}
+      {slashFiltered.length > 0 && (
+        <div className="slash-popup">
+          {slashFiltered.map((c, i) => (
+            <div
+              key={c.cmd}
+              className={`slash-item ${i === slashIdx ? 'active' : ''}`}
+              onMouseEnter={() => setSlashIdx(i)}
+              onMouseDown={e => { e.preventDefault(); setInput(c.placeholder); inputRef.current?.focus(); }}
+            >
+              <span className="slash-item-cmd">{c.cmd}</span>
+              <span className="slash-item-desc">{c.desc}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="chat-input-bar">
+        <button
+          className={`chat-mic ${voiceActive ? 'active' : ''}`}
+          onClick={voiceActive ? stopVoice : startVoice}
+          title={voiceActive ? 'Stop recording' : 'Voice input'}
+        >
+          <Mic size={15} />
+        </button>
         <textarea
           ref={inputRef}
           value={input}
           onChange={e => {
-            setInput(e.target.value); setPromptIdx(-1);
+            setInput(e.target.value); setPromptIdx(-1); setSlashIdx(0);
             // Auto-resize
             const el = e.target;
             el.style.height = 'auto';
@@ -661,10 +924,26 @@ export default function ChatPanel() {
                 e.preventDefault();
                 const file = item.getAsFile();
                 if (!file) continue;
+                // Compress image to avoid payload-too-large errors
                 const reader = new FileReader();
                 reader.onload = () => {
-                  const data = reader.result as string;
-                  setPastedImages(prev => [...prev, { data, name: file.name || 'image.png' }]);
+                  const img = new Image();
+                  img.onload = () => {
+                    const maxDim = 1200;
+                    let w = img.width, h = img.height;
+                    if (w > maxDim || h > maxDim) {
+                      const scale = maxDim / Math.max(w, h);
+                      w = Math.round(w * scale);
+                      h = Math.round(h * scale);
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w;
+                    canvas.height = h;
+                    canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+                    const data = canvas.toDataURL('image/jpeg', 0.7);
+                    setPastedImages(prev => [...prev, { data, name: file.name || 'image.png' }]);
+                  };
+                  img.src = reader.result as string;
                 };
                 reader.readAsDataURL(file);
               }
@@ -688,6 +967,12 @@ export default function ChatPanel() {
           </button>
         )}
       </div>
+      {lightboxSrc && (
+        <div className="chat-lightbox" onClick={() => setLightboxSrc(null)}>
+          <img src={lightboxSrc} alt="Full size" onClick={e => e.stopPropagation()} />
+          <button className="chat-lightbox-close" onClick={() => setLightboxSrc(null)}>&times;</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -700,8 +985,10 @@ function renderMarkdownLine(line: string): React.ReactNode {
   while (remaining.length > 0) {
     const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
     const codeMatch = remaining.match(/`(.+?)`/);
+    const linkMatch = remaining.match(/\[([^\]]+)\]\(([^)]+)\)/);
+    const urlMatch = remaining.match(/(?<!\()(https?:\/\/[^\s<>"')\]]+)/);
 
-    const matches = [boldMatch, codeMatch].filter(Boolean).sort((a, b) => a!.index! - b!.index!);
+    const matches = [boldMatch, codeMatch, linkMatch, urlMatch].filter(Boolean).sort((a, b) => a!.index! - b!.index!);
 
     if (matches.length === 0) {
       parts.push(remaining);
@@ -715,8 +1002,13 @@ function renderMarkdownLine(line: string): React.ReactNode {
 
     if (match[0].startsWith('**')) {
       parts.push(<strong key={key++}>{match[1]}</strong>);
-    } else {
+    } else if (match[0].startsWith('`')) {
       parts.push(<code key={key++} className="inline-code">{match[1]}</code>);
+    } else if (match[0].startsWith('[')) {
+      parts.push(<a key={key++} href={match[2]} target="_blank" rel="noopener noreferrer" className="chat-link">{match[1]}</a>);
+    } else if (match[0].startsWith('http')) {
+      const display = match[0].length > 50 ? match[0].substring(0, 47) + '...' : match[0];
+      parts.push(<a key={key++} href={match[0]} target="_blank" rel="noopener noreferrer" className="chat-link">{display}</a>);
     }
 
     remaining = remaining.substring(idx + match[0].length);

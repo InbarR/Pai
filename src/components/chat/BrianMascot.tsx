@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
-export default function PaiMascot({ size = 80 }: { size?: number }) {
+export default function BrianMascot({ size = 80 }: { size?: number }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const ref = useRef<HTMLDivElement>(null);
 
@@ -38,7 +38,7 @@ export default function PaiMascot({ size = 80 }: { size?: number }) {
   const eyeY = offset.y * 2;
 
   return (
-    <div ref={ref} className="pai-mascot" style={{ width: size, height: size }}>
+    <div ref={ref} className="brian-mascot" style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox="0 0 100 100" fill="none"
         style={{ transform: `translate(${offset.x}px, ${offset.y}px) rotate(${tiltDeg}deg)` }}>
 

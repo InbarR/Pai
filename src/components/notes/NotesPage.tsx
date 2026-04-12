@@ -34,6 +34,7 @@ export default function NotesPage() {
   const [oneNotePages, setOneNotePages] = useState<any[]>([]);
   const [oneNoteSectionId, setOneNoteSectionId] = useState<string | null>(null);
   const [importingPages, setImportingPages] = useState<Set<string>>(new Set());
+  const [dragOverNb, setDragOverNb] = useState<number | null>(null);
   const renameNbRef = useRef<HTMLInputElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -102,9 +103,9 @@ export default function NotesPage() {
 
   // Quick add
   const handleQuickAdd = () => {
-    if (!quickAdd.trim()) return;
+    const title = quickAdd.trim() || 'Untitled';
     api.post<Note>('/notes', {
-      title: quickAdd.trim(),
+      title,
       notebookId: activeNotebook || 1,
       isTask: quickIsTask,
     }).then(note => {
@@ -112,6 +113,7 @@ export default function NotesPage() {
       qc.invalidateQueries({ queryKey: ['notebooks'] });
       qc.invalidateQueries({ queryKey: ['nav-counts'] });
       setQuickAdd('');
+      selectNote(note);
     });
   };
 
@@ -187,13 +189,13 @@ export default function NotesPage() {
   };
 
   const cycleStatus = useMutation({
-    mutationFn: (id: number) => api.post<Note>(`/notes/${id}/cycle-status`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); },
+    mutationFn: (id: number) => api.post<Note>(`/notes/${id}/toggle-done`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); qc.invalidateQueries({ queryKey: ['notebooks'] }); },
   });
 
   const toggleTask = useMutation({
     mutationFn: (id: number) => api.post<Note>(`/notes/${id}/toggle-task`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); qc.invalidateQueries({ queryKey: ['notebooks'] }); },
   });
 
   const pinMutation = useMutation({
@@ -207,6 +209,18 @@ export default function NotesPage() {
       if (activeId === id) { setActiveId(null); setContent(''); }
       qc.invalidateQueries({ queryKey: ['notes'] });
       qc.invalidateQueries({ queryKey: ['nav-counts'] });
+      qc.invalidateQueries({ queryKey: ['notebooks'] });
+    },
+  });
+
+  const moveToNotebook = useMutation({
+    mutationFn: ({ noteIds, notebookId }: { noteIds: number[]; notebookId: number }) =>
+      Promise.all(noteIds.map(id => api.put(`/notes/${id}`, { notebookId }))),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['notebooks'] });
+      qc.invalidateQueries({ queryKey: ['nav-counts'] });
+      setSelected(new Set());
     },
   });
 
@@ -264,8 +278,8 @@ export default function NotesPage() {
       <div className="notebooks-panel">
         <div style={{ padding: '10px 10px 6px' }}>
           <div className="flex justify-between items-center">
-            <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.5px' }}>Lists</span>
-            <button className="ghost" onClick={() => addNotebookMutation.mutate()} style={{ padding: 2 }}><FolderPlus size={13} /></button>
+            <span className="section-label">Lists</span>
+            <button className="btn-icon" onClick={() => addNotebookMutation.mutate()}><FolderPlus size={13} /></button>
           </div>
         </div>
         <div className={`notebook-item ${activeNotebook === null ? 'active' : ''}`} onClick={() => setActiveNotebook(null)}>
@@ -275,9 +289,22 @@ export default function NotesPage() {
         {notebooks.map(nb => (
           <div
             key={nb.id}
-            className={`notebook-item ${activeNotebook === nb.id ? 'active' : ''}`}
+            className={`notebook-item ${activeNotebook === nb.id ? 'active' : ''} ${dragOverNb === nb.id ? 'drop-target' : ''}`}
             onClick={() => setActiveNotebook(nb.id)}
             onContextMenu={e => { e.preventDefault(); setNbContextMenu({ x: e.clientX, y: e.clientY, id: nb.id }); }}
+            onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverNb(nb.id); }}
+            onDragLeave={() => setDragOverNb(null)}
+            onDrop={e => {
+              e.preventDefault();
+              setDragOverNb(null);
+              const json = e.dataTransfer.getData('application/x-note-ids');
+              if (json) {
+                try {
+                  const ids = JSON.parse(json) as number[];
+                  moveToNotebook.mutate({ noteIds: ids, notebookId: nb.id });
+                } catch {}
+              }
+            }}
           >
             <Book size={13} />
             {renamingNb === nb.id ? (
@@ -307,15 +334,15 @@ export default function NotesPage() {
           </button>
           <input
             className="quick-add-input"
-            placeholder={quickIsTask ? 'Add a task... (Ctrl+N) — click icon for note' : 'Add a note... — click icon for task'}
+            placeholder={quickIsTask ? 'Add a task… or press + to create empty' : 'Add a note… or press + to create empty'}
             value={quickAdd}
             onChange={e => setQuickAdd(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleQuickAdd(); }}
           />
-          <button className="ghost" onClick={handleQuickAdd} disabled={!quickAdd.trim()} style={{ padding: '4px 8px' }}>
+          <button className="btn-add" onClick={handleQuickAdd} title={quickAdd.trim() ? 'Add task' : 'Create new empty task'}>
             <Plus size={16} />
           </button>
-          <button className="ghost" onClick={handleImport} title="Import from file" style={{ padding: '4px 8px' }}>
+          <button className="ghost" onClick={handleImport} title="Import from file" aria-label="Import from file" style={{ padding: '4px 8px' }}>
             <Upload size={16} />
           </button>
           <button className="ghost" onClick={async () => {
@@ -324,7 +351,7 @@ export default function NotesPage() {
               const books = await api.get<any[]>('/notes/onenote/notebooks');
               setOneNoteBooks(books);
             } catch { setOneNoteBooks([]); }
-          }} title="Import from OneNote" style={{ padding: '4px 8px' }}>
+          }} title="Import from OneNote" aria-label="Import from OneNote" style={{ padding: '4px 8px' }}>
             <Book size={16} />
           </button>
         </div>
@@ -391,6 +418,12 @@ export default function NotesPage() {
               <div
                 key={note.id}
                 className={`todo-item ${isActive ? 'active' : ''} ${selected.has(note.id) ? 'selected' : ''} ${note.isTask && note.taskStatus === 2 ? 'done' : ''}`}
+                draggable
+                onDragStart={e => {
+                  const ids = selected.size > 0 && selected.has(note.id) ? Array.from(selected) : [note.id];
+                  e.dataTransfer.setData('application/x-note-ids', JSON.stringify(ids));
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
                 onClick={e => {
                   if (e.ctrlKey || e.metaKey) {
                     setSelected(prev => { const n = new Set(prev); n.has(note.id) ? n.delete(note.id) : n.add(note.id); return n; });
@@ -429,7 +462,7 @@ export default function NotesPage() {
               </div>
             );
           })}
-          {view !== 'reminders' && notes.length === 0 && <div className="text-muted text-small" style={{ padding: 24, textAlign: 'center' }}>
+          {view !== 'reminders' && notes.length === 0 && <div className="empty-inline">
             {search ? 'No matches' : view === 'done' ? 'No completed tasks' : 'Nothing here yet. Add one above!'}
           </div>}
         </div>
@@ -447,9 +480,24 @@ export default function NotesPage() {
               }}>Delete {selected.size} items</button>
             </>
           ) : (() => {
+            const isReminder = contextMenu.id < 0;
+            const reminderId = -contextMenu.id;
+            if (isReminder) {
+              return (<>
+                <button onClick={() => {
+                  api.post(`/reminders/${reminderId}/dismiss`).then(() => { qc.invalidateQueries({ queryKey: ['reminders'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); });
+                  setContextMenu(null);
+                }}>Dismiss reminder</button>
+                <hr />
+                <button className="danger-item" onClick={() => {
+                  api.delete(`/reminders/${reminderId}`).then(() => { qc.invalidateQueries({ queryKey: ['reminders'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); });
+                  setContextMenu(null);
+                }}>Delete</button>
+              </>);
+            }
             const note = allNotes.find(n => n.id === contextMenu.id);
             return (<>
-              {note?.isTask && note.taskStatus === 2 && (
+              {!!note?.isTask && note.taskStatus === 2 && (
                 <button onClick={() => {
                   api.put(`/notes/${contextMenu.id}`, { taskStatus: 0 }).then(() => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); });
                   setContextMenu(null); setSelected(new Set());
@@ -469,14 +517,15 @@ export default function NotesPage() {
       )}
 
       {/* Detail pane */}
-      <div className="todo-detail-panel">
+      <div className={`todo-detail-panel${active ? '' : ' hidden'}`}>
         {active ? (
           <>
             <div className="todo-detail-header">
               <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
                 {active.isTask && (
                   <button className={`note-status-btn ${statusClasses[active.taskStatus]}`}
-                    onClick={() => cycleStatus.mutate(active.id)}>
+                    onClick={() => cycleStatus.mutate(active.id)}
+                    title={active.taskStatus === 2 ? 'Mark as To Do' : 'Mark as Done'}>
                     {statusLabels[active.taskStatus]}
                   </button>
                 )}

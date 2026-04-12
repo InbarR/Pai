@@ -12,9 +12,9 @@ const isDev = process.env.NODE_ENV !== 'production';
 const DEV_URL = 'http://localhost:5179';
 const SERVER_PORT = 3001;
 
-app.setName('Pai');
+app.setName('Brian');
 if (process.platform === 'win32') {
-  app.setAppUserModelId('Pai');
+  app.setAppUserModelId('Brian');
 }
 
 function createWindow() {
@@ -22,16 +22,23 @@ function createWindow() {
   const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
   const { x: workX, y: workY } = primaryDisplay.workArea;
 
-  const winWidth = 420;
+  const settings = loadSettings();
+  const mode = settings.windowMode || 'companion';
+  const isSidecar = mode === 'sidecar';
+
+  const winWidth = isSidecar ? 420 : 520;
+  const winHeight = isSidecar ? screenH : Math.min(700, screenH - 100);
+  const winX = isSidecar ? workX + screenW - winWidth : workX + Math.round((screenW - winWidth) / 2);
+  const winY = isSidecar ? workY : workY + Math.round((screenH - winHeight) / 2);
 
   mainWindow = new BrowserWindow({
     width: winWidth,
-    height: screenH,
-    x: workX + screenW - winWidth,
-    y: workY,
+    height: winHeight,
+    x: winX,
+    y: winY,
     minWidth: 340,
     minHeight: 400,
-    title: 'Pai',
+    title: 'Brian',
     icon: path.join(__dirname, 'icon.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -105,20 +112,42 @@ function toggleWindow() {
   if (isVisible) {
     hideWindow();
   } else {
-    // Always show as sidecar
-    snapToSide('right');
+    const settings = loadSettings();
+    const mode = settings.windowMode || 'companion';
+
+    if (mode === 'sidecar') {
+      snapToSide('right');
+      mainWindow.webContents.executeJavaScript(`
+        window.dispatchEvent(new Event('brian-force-sidecar'));
+      `).catch(() => {});
+    } else {
+      // Companion mode — centered, not always on top
+      showCompanion();
+    }
+
     mainWindow.show();
     mainWindow.focus();
     isVisible = true;
-    // Tell renderer to switch to sidecar mode
     mainWindow.webContents.executeJavaScript(`
-      window.dispatchEvent(new Event('pai-force-sidecar'));
       setTimeout(() => {
         const input = document.querySelector('.chat-input-bar textarea');
         if (input) input.focus();
       }, 150);
     `).catch(() => {});
   }
+}
+
+function showCompanion() {
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
+  const { x: workX, y: workY } = primaryDisplay.workArea;
+  const winWidth = 520;
+  const winHeight = Math.min(700, screenH - 100);
+  const x = workX + Math.round((screenW - winWidth) / 2);
+  const y = workY + Math.round((screenH - winHeight) / 2);
+  mainWindow.setBounds({ x, y, width: winWidth, height: winHeight });
+  mainWindow.setAlwaysOnTop(false);
 }
 
 // Pop up and FORCE to front (for notifications)
@@ -163,9 +192,10 @@ function createTray() {
   tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
-    { label: 'Show Pai', click: showWindow },
+    { label: 'Show Brian', click: showWindow },
     { label: 'Hide', click: hideWindow },
     { type: 'separator' },
+    { label: 'Companion (Center)', click: showCompanion },
     { label: 'Sidecar Right', click: () => snapToSide('right') },
     { label: 'Sidecar Left', click: () => snapToSide('left') },
     { label: 'Expand', click: expandWindow },
@@ -177,7 +207,7 @@ function createTray() {
     { label: 'Quit', click: () => { app.isQuitting = true; app.quit(); } },
   ]);
 
-  tray.setToolTip('Pai - Personal AI');
+  tray.setToolTip('Brian - Your Second Brain');
   tray.setContextMenu(contextMenu);
   tray.on('click', toggleWindow);
   tray.on('double-click', showWindow);
@@ -194,7 +224,7 @@ function loadSettings() {
   try {
     if (fs.existsSync(settingsPath)) return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
   } catch { }
-  return { shortcut: 'Ctrl+2' };
+  return { shortcut: 'Ctrl+2', windowMode: 'companion' };
 }
 
 function saveSettings(settings) {
@@ -212,9 +242,9 @@ function registerShortcuts() {
 
   try {
     globalShortcut.register(shortcut, toggleWindow);
-    console.log(`[Pai] Global shortcut registered: ${shortcut}`);
+    console.log(`[Brian] Global shortcut registered: ${shortcut}`);
   } catch (err) {
-    console.error(`[Pai] Failed to register shortcut ${shortcut}:`, err.message);
+    console.error(`[Brian] Failed to register shortcut ${shortcut}:`, err.message);
   }
 }
 
@@ -229,25 +259,40 @@ ipcMain.handle('save-settings', (_, settings) => {
 ipcMain.handle('window-maximize', () => {
   if (!mainWindow) return;
   mainWindow.setAlwaysOnTop(false);
-  if (mainWindow.isMaximized()) mainWindow.unmaximize();
-  // Use large bounds instead of maximize so window stays resizable
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenW, height: screenH } = primaryDisplay.workAreaSize;
-  const { x: workX, y: workY } = primaryDisplay.workArea;
-  const w = Math.floor(screenW * 0.85);
-  const h = Math.floor(screenH * 0.9);
-  mainWindow.setBounds({
-    x: workX + Math.floor((screenW - w) / 2),
-    y: workY + Math.floor((screenH - h) / 2),
-    width: w,
-    height: h,
-  });
+  mainWindow.maximize();
   showWindow();
-  return { maximized: false };
+  return { ok: true };
+});
+
+ipcMain.handle('window-minimize', () => {
+  if (!mainWindow) return;
+  mainWindow.setAlwaysOnTop(false);
+  mainWindow.minimize();
+  return { ok: true };
+});
+
+ipcMain.handle('window-close', () => {
+  hideWindow();
+  return { ok: true };
 });
 
 ipcMain.handle('window-hide', () => {
   hideWindow();
+  return { ok: true };
+});
+
+ipcMain.handle('window-is-visible', () => {
+  return mainWindow ? mainWindow.isVisible() && !mainWindow.isMinimized() : false;
+});
+
+ipcMain.handle('show-notification', (_, title, body) => {
+  const notif = new Notification({
+    title: title || 'Brian',
+    body: body || '',
+    icon: path.join(__dirname, 'icon.png'),
+  });
+  notif.on('click', () => popUp());
+  notif.show();
   return { ok: true };
 });
 
@@ -256,7 +301,14 @@ ipcMain.handle('window-sidecar', (_, side) => {
   return { ok: true };
 });
 
+ipcMain.handle('window-companion', () => {
+  showCompanion();
+  return { ok: true };
+});
+
 // Poll the server's SSE for notifications and pop up when needed
+const shownNotifications = new Set(); // dedup: prevent repeated popups
+
 function watchNotifications() {
   const url = `http://localhost:${SERVER_PORT}/api/notifications/stream`;
 
@@ -276,18 +328,25 @@ function watchNotifications() {
             eventData = line.slice(6).trim();
             try {
               const data = JSON.parse(eventData);
+              // Dedup key
+              const dedupKey = `${eventType}-${data.id || data.subject || ''}-${data.start || data.dueAt || ''}`;
+              if (shownNotifications.has(dedupKey)) { eventType = ''; eventData = ''; continue; }
+              shownNotifications.add(dedupKey);
+              // Clean old keys after 1 hour
+              setTimeout(() => shownNotifications.delete(dedupKey), 3600000);
+
               if (eventType === 'reminder-due') {
                 const reminderTitle = data.title || 'You have a reminder';
                 const notif = new Notification({
-                  title: 'Pai Reminder',
+                  title: 'Brian Reminder',
                   body: reminderTitle,
                   icon: path.join(__dirname, 'icon.png'),
                 });
                 notif.on('click', () => {
                   popUp();
-                  // Send reminder to chat so Pai can suggest actions
+                  // Send reminder to chat so Brian can suggest actions
                   mainWindow.webContents.executeJavaScript(`
-                    window.dispatchEvent(new CustomEvent('pai-auto-chat', { detail: ${JSON.stringify(JSON.stringify(`I have a reminder: "${reminderTitle}". Help me with this — suggest what I should do or draft what's needed.`))} }));
+                    window.dispatchEvent(new CustomEvent('brian-auto-chat', { detail: ${JSON.stringify(JSON.stringify(`I have a reminder: "${reminderTitle}". Help me with this — suggest what I should do or draft what's needed.`))} }));
                   `).catch(() => {});
                 });
                 notif.show();
@@ -301,7 +360,7 @@ function watchNotifications() {
                 notif.on('click', () => {
                   popUp();
                   mainWindow.webContents.executeJavaScript(`
-                    window.dispatchEvent(new CustomEvent('pai-auto-chat', { detail: ${JSON.stringify(JSON.stringify(`My meeting "${meetingSubject}" is starting soon. Help me prepare — what should I know?`))} }));
+                    window.dispatchEvent(new CustomEvent('brian-auto-chat', { detail: ${JSON.stringify(JSON.stringify(`My meeting "${meetingSubject}" is starting soon. Help me prepare — what should I know?`))} }));
                   `).catch(() => {});
                 });
                 notif.show();

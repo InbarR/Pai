@@ -3,12 +3,11 @@ import Layout from './components/Layout';
 import DashboardPage from './components/dashboard/DashboardPage';
 import NotesPage from './components/notes/NotesPage';
 import RemindersPage from './components/reminders/RemindersPage';
-import ReadingPage from './components/reading/ReadingPage';
 import EmailsPage from './components/emails/EmailsPage';
 import FilesPage from './components/files/FilesPage';
 import PeoplePage from './components/people/PeoplePage';
 import SettingsPage from './components/settings/SettingsPage';
-import PaiMascot from './components/chat/PaiMascot';
+import BrianMascot from './components/chat/BrianMascot';
 import { useNotifications } from './hooks/useNotifications';
 import { X, Clock, CheckCircle2, MessageCircle } from 'lucide-react';
 import { api } from './api/client';
@@ -81,7 +80,6 @@ export default function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/notes" element={<NotesPage />} />
           <Route path="/reminders" element={<RemindersPage />} />
-          <Route path="/reading" element={<ReadingPage />} />
           <Route path="/emails" element={<EmailsPage />} />
           <Route path="/files" element={<FilesPage />} />
           <Route path="/people" element={<PeoplePage />} />
@@ -89,25 +87,25 @@ export default function App() {
         </Routes>
       </Layout>
 
-      {/* Pai companion window — small floating bubble with chat input */}
+      {/* Brian companion window — small floating bubble with chat input */}
       {bubble && (
-        <div className="pai-companion">
-          <div className="pai-companion-header">
-            <PaiMascot size={32} />
-            <div className="pai-companion-msg">
-              <span className="pai-bubble-name">Pai</span>
-              <span className="pai-companion-text">
+        <div className="brian-companion">
+          <div className="brian-companion-header">
+            <BrianMascot size={32} />
+            <div className="brian-companion-msg">
+              <span className="brian-bubble-name">Brian</span>
+              <span className="brian-companion-text">
                 {bubble.message.split('**').map((part, i) =>
                   i % 2 === 1 ? <strong key={i}>{part}</strong> : part
                 )}
               </span>
-              {bubble.detail && <span className="pai-bubble-detail">{bubble.detail}</span>}
+              {bubble.detail && <span className="brian-bubble-detail">{bubble.detail}</span>}
             </div>
             <button className="ghost" onClick={() => { dismissBubble(); setShowSnoozeOptions(false); }}>
               <X size={14} />
             </button>
           </div>
-          <div className="pai-companion-actions">
+          <div className="brian-companion-actions">
             {bubble.joinUrl && (
               <button className="join-btn" onClick={() => { window.open(bubble.joinUrl, '_blank'); }}>
                 Join Meeting
@@ -126,7 +124,7 @@ export default function App() {
             </button>
           </div>
           {bubble.links && bubble.links.length > 0 && (
-            <div className="pai-companion-links">
+            <div className="brian-companion-links">
               <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Links from agenda</span>
               {bubble.links.map((url, i) => {
                 const label = (() => {
@@ -141,7 +139,7 @@ export default function App() {
             </div>
           )}
           {showSnoozeOptions && (
-            <div className="pai-companion-snooze">
+            <div className="brian-companion-snooze">
               <input
                 placeholder="e.g. 30m, 2h, tomorrow 9am"
                 value={snoozeInput}
@@ -155,7 +153,7 @@ export default function App() {
                 }}
                 autoFocus
               />
-              <div className="pai-snooze-presets">
+              <div className="brian-snooze-presets">
                 {['15m', '30m', '1h', '2h', 'tomorrow'].map(label => (
                   <button key={label} onClick={() => {
                     if (bubble.reminderId) {
@@ -168,9 +166,9 @@ export default function App() {
               </div>
             </div>
           )}
-          <div className="pai-companion-footer">
-            <button onClick={() => { dismissBubble(); setShowSnoozeOptions(false); window.dispatchEvent(new Event('pai-show-chat')); }}>
-              <MessageCircle size={12} /> Open Pai
+          <div className="brian-companion-footer">
+            <button onClick={() => { dismissBubble(); setShowSnoozeOptions(false); window.dispatchEvent(new Event('brian-show-chat')); }}>
+              <MessageCircle size={12} /> Open Brian
             </button>
           </div>
         </div>

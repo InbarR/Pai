@@ -2,6 +2,8 @@ import { Router } from 'express';
 import db from '../db';
 import { syncEmails, getAuthStatus, getEmailBody, getEmailFolders, getFolderEmails } from '../services/graph';
 import { chatCompletion, isAuthenticated as isCopilotAuth } from '../services/copilot';
+import { extractAndIngest } from '../services/entity-extractor';
+import { getAttentionItems, groupByThread, getDailySummary } from '../services/email-triage';
 
 const router = Router();
 
@@ -26,7 +28,7 @@ router.get('/folders', async (req, res) => {
 router.get('/folder/:path(*)', async (req, res) => {
   try {
     const count = parseInt(req.query.count as string) || 30;
-    const emails = await getFolderEmails(req.params.path, count);
+    const emails = await getFolderEmails((req.params as any).path || req.params[0], count);
     res.json(emails);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -43,6 +45,9 @@ router.post('/sync', async (req, res) => {
 
     // Trigger AI triage in background for unprocessed emails
     triageNewEmails().catch(err => console.error('[Triage]', err.message));
+
+    // Extract entities into memory graph in background
+    ingestNewEmails().catch(err => console.error('[MemoryGraph]', err.message));
 
     res.json({ synced: count });
   } catch (err: any) {
@@ -90,6 +95,21 @@ router.post('/:id/to-task', (req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM Notes WHERE id = ?').get(result.lastInsertRowid));
 });
 
+// --- Smart attention endpoints ---
+
+router.get('/attention', (req, res) => {
+  const limit = parseInt(req.query.limit as string) || 20;
+  res.json(getAttentionItems(limit));
+});
+
+router.get('/threads', (req, res) => {
+  res.json(groupByThread());
+});
+
+router.get('/daily-summary', (req, res) => {
+  res.json(getDailySummary());
+});
+
 // --- AI Email Triage ---
 
 async function triageNewEmails(): Promise<number> {
@@ -114,6 +134,11 @@ Each object must have:
 - "priority": one of "urgent", "high", "normal", "low"
 - "summary": one sentence summary (max 80 chars)
 - "suggestedAction": short suggestion like "Reply", "Schedule follow-up", "Read later", "Archive", "Add to tasks"
+- "actionItems": array of strings — explicit or implicit action items from the email (empty array if none)
+- "deadlines": array of strings — any dates/deadlines mentioned (e.g., "2026-03-25", "end of week", "by Friday")
+- "threadTopic": short topic/project name this email belongs to (e.g., "Q3 Planning", "Budget Review", "Onboarding")
+
+Focus on precision — only flag real action items and deadlines. If unsure, leave the array empty.
 
 Emails:
 ${emailList}
@@ -131,7 +156,7 @@ Return ONLY the JSON array, no markdown, no explanation.`;
     const analyses = JSON.parse(cleaned) as any[];
 
     const update = db.prepare(
-      'UPDATE ImportantEmails SET aiCategory = ?, aiPriority = ?, aiSummary = ?, aiSuggestedAction = ? WHERE id = ?'
+      'UPDATE ImportantEmails SET aiCategory = ?, aiPriority = ?, aiSummary = ?, aiSuggestedAction = ?, aiActionItems = ?, aiDeadlines = ?, aiThreadTopic = ? WHERE id = ?'
     );
 
     const updateAll = db.transaction(() => {
@@ -142,6 +167,9 @@ Return ONLY the JSON array, no markdown, no explanation.`;
           a.priority || 'normal',
           a.summary || '',
           a.suggestedAction || '',
+          JSON.stringify(a.actionItems || []),
+          JSON.stringify(a.deadlines || []),
+          a.threadTopic || '',
           untriaged[i].id
         );
       }
@@ -154,6 +182,28 @@ Return ONLY the JSON array, no markdown, no explanation.`;
     console.error('[Triage] AI classification failed:', err.message);
     return 0;
   }
+}
+
+// --- Memory graph ingestion for new emails ---
+async function ingestNewEmails(): Promise<number> {
+  if (!isCopilotAuth()) return 0;
+  // Ingest the 10 most recent emails that haven't been seen in the graph yet
+  // We use a simple heuristic: emails from the last 24 hours
+  const since = new Date(Date.now() - 86400000).toISOString();
+  const recent: any[] = db.prepare(
+    'SELECT * FROM ImportantEmails WHERE receivedAt >= ? ORDER BY receivedAt DESC LIMIT 10'
+  ).all(since);
+
+  let count = 0;
+  for (const email of recent) {
+    try {
+      await extractAndIngest('email', email, email.id?.toString(), email.subject);
+      count++;
+    } catch { }
+    await new Promise(r => setTimeout(r, 500));
+  }
+  if (count > 0) console.log(`[MemoryGraph] Ingested ${count} emails into graph`);
+  return count;
 }
 
 export default router;

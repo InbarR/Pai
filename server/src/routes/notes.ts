@@ -3,6 +3,7 @@ import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { extractAndIngest } from '../services/entity-extractor';
 import db from '../db';
 
 const router = Router();
@@ -117,7 +118,7 @@ Write-Output ($result | ConvertTo-Json -Compress)
   }
 });
 
-// Import a OneNote page into Pai notes
+// Import a OneNote page into Brian notes
 router.post('/onenote/import', (req, res) => {
   try {
     const { pageId, notebookId = 1 } = req.body;
@@ -205,7 +206,13 @@ router.post('/', (req, res) => {
   const result = db.prepare(
     'INSERT INTO Notes (title, content, tags, notebookId, isTask, dueDate, sourceType, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(title, content, tags, notebookId, isTask ? 1 : 0, dueDate, sourceType, now, now);
-  res.status(201).json(db.prepare('SELECT * FROM Notes WHERE id = ?').get(result.lastInsertRowid));
+  const note = db.prepare('SELECT * FROM Notes WHERE id = ?').get(result.lastInsertRowid) as any;
+  res.status(201).json(note);
+
+  // Ingest into memory graph in background
+  if (title && content) {
+    extractAndIngest(isTask ? 'task' : 'note', note, note.id?.toString(), title).catch(() => {});
+  }
 });
 
 router.put('/:id', (req, res) => {
@@ -238,6 +245,16 @@ router.post('/:id/cycle-status', (req, res) => {
   const note: any = db.prepare('SELECT taskStatus FROM Notes WHERE id = ?').get(req.params.id);
   if (!note) return res.status(404).json({ error: 'Not found' });
   const next = (note.taskStatus + 1) % 3;
+  const now = new Date().toISOString();
+  db.prepare('UPDATE Notes SET taskStatus = ?, updatedAt = ? WHERE id = ?').run(next, now, req.params.id);
+  res.json(db.prepare('SELECT * FROM Notes WHERE id = ?').get(req.params.id));
+});
+
+// Toggle done: any status -> done (2), done -> todo (0)
+router.post('/:id/toggle-done', (req, res) => {
+  const note: any = db.prepare('SELECT taskStatus FROM Notes WHERE id = ?').get(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Not found' });
+  const next = note.taskStatus === 2 ? 0 : 2;
   const now = new Date().toISOString();
   db.prepare('UPDATE Notes SET taskStatus = ?, updatedAt = ? WHERE id = ?').run(next, now, req.params.id);
   res.json(db.prepare('SELECT * FROM Notes WHERE id = ?').get(req.params.id));

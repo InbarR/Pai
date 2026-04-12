@@ -3,8 +3,27 @@ import { broadcast } from './notification-sse';
 import { execSync } from 'child_process';
 import path from 'path';
 
-const notifiedIds = new Set<number>();
+// DB-backed tracking — survives server restarts from tsx watch
+const NOTIF_PREFIX = 'ntf_';
+
+function isNotified(key: string): boolean {
+  try {
+    const dbKey = NOTIF_PREFIX + key.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 80);
+    const row = db.prepare("SELECT value FROM AppSettings WHERE key = ?").get(dbKey) as any;
+    return !!row;
+  } catch { return false; }
+}
+
+function markNotified(key: string) {
+  try {
+    const dbKey = NOTIF_PREFIX + key.replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 80);
+    db.prepare("INSERT OR REPLACE INTO AppSettings (key, value) VALUES (?, ?)").run(dbKey, '1');
+  } catch {}
+}
+
+// In-memory set for fast dedup within a single server session (DB handles cross-restart dedup)
 const notifiedMeetings = new Set<string>();
+
 const BRIDGE_PATH = path.join(__dirname, '../../../tools/outlook-bridge/bin/Release/net48/outlook-bridge.exe');
 
 function runBridge(args: string): any {
@@ -52,7 +71,7 @@ export function startReminderScheduler() {
       `).all(nowStr, fiveMinAgo, nowStr);
 
       for (const reminder of dueReminders) {
-        if (notifiedIds.has(reminder.id)) continue;
+        if (isNotified(`rem_${reminder.id}`)) continue;
 
         broadcast('reminder-due', {
           id: reminder.id,
@@ -60,15 +79,7 @@ export function startReminderScheduler() {
           description: reminder.description,
           dueAt: reminder.dueAt,
         });
-        notifiedIds.add(reminder.id);
-      }
-
-      // Clean up dismissed
-      const dismissed: any[] = db.prepare(
-        'SELECT id FROM Reminders WHERE isDismissed = 1'
-      ).all();
-      for (const r of dismissed) {
-        notifiedIds.delete(r.id);
+        markNotified(`rem_${reminder.id}`);
       }
     } catch (err) {
       console.error('[Scheduler] Reminder error:', err);
@@ -89,11 +100,13 @@ export function startReminderScheduler() {
         const key = `${event.subject}-${start.toISOString()}`;
 
         // Skip if already notified or in the past
-        if (notifiedMeetings.has(key)) continue;
+        const alreadyNotified = notifiedMeetings.has(key) || isNotified(`mtg_${key}`);
+        if (alreadyNotified) continue;
         if (start < now) continue;
 
         // Notify if meeting starts within 5 minutes
         if (start <= fiveMinFromNow) {
+          console.log(`[Scheduler] Notifying meeting: ${event.subject} at ${start.toISOString()}`);
           const joinUrl = findJoinUrl(event.body || event.location || '');
           const bodyUrls = extractUrls(event.body || '');
 
@@ -108,6 +121,7 @@ export function startReminderScheduler() {
             links: bodyUrls.filter((u: string) => u !== joinUrl).slice(0, 5),
           });
           notifiedMeetings.add(key);
+          markNotified(`mtg_${key}`);
         }
       }
 
@@ -139,5 +153,5 @@ export function startReminderScheduler() {
 }
 
 export function clearNotified(id: number) {
-  notifiedIds.delete(id);
+  try { db.prepare("DELETE FROM AppSettings WHERE key = ?").run(NOTIF_PREFIX + `rem_${id}`); } catch {}
 }

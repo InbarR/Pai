@@ -21,6 +21,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [subPrompt, setSubPrompt] = useState<{ label: string; placeholder: string; onSubmit: (val: string) => void } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const mouseMovedRef = useRef(false);
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -28,7 +29,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     navigate(path);
     // If in sidecar, expand to full
     if (window.innerWidth < 600) {
-      try { (window as any).pai?.maximize?.(); } catch {}
+      try { (window as any).brian?.maximize?.(); } catch {}
     }
     onClose();
   }, [navigate, onClose]);
@@ -70,26 +71,32 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     { id: 'chat', label: 'Open Chat', icon: MessageCircle, category: 'action', action: () => { onClose(); setTimeout(() => { const input = document.querySelector('.chat-input-bar textarea') as HTMLTextAreaElement; if (input) input.focus(); }, 100); } },
 
     // Window
-    { id: 'win-sidecar', label: 'Switch to Sidecar', icon: Minimize2, category: 'window', shortcut: 'Alt+F', action: () => { try { (window as any).pai?.sidecar?.('right'); } catch {} onClose(); } },
-    { id: 'win-full', label: 'Switch to Full Mode', icon: Maximize2, category: 'window', shortcut: 'Alt+F', action: () => { try { (window as any).pai?.maximize?.(); } catch {} onClose(); } },
-    { id: 'win-hide', label: 'Hide Pai', icon: Moon, category: 'window', shortcut: 'Esc', action: () => { try { (window as any).pai?.hide?.(); } catch {} onClose(); } },
+    { id: 'win-sidecar', label: 'Switch to Sidecar', icon: Minimize2, category: 'window', shortcut: 'Alt+F', action: () => { try { (window as any).brian?.sidecar?.('right'); } catch {} onClose(); } },
+    { id: 'win-full', label: 'Switch to Full Mode', icon: Maximize2, category: 'window', shortcut: 'Alt+F', action: () => { try { (window as any).brian?.maximize?.(); } catch {} onClose(); } },
+    { id: 'win-hide', label: 'Hide Brian', icon: Moon, category: 'window', shortcut: 'Esc', action: () => { try { (window as any).brian?.hide?.(); } catch {} onClose(); } },
   ];
 
-  const filtered = query
+  const categoryOrder = ['action', 'nav', 'window'];
+  const rawFiltered = query
     ? commands.filter(c => c.label.toLowerCase().includes(query.toLowerCase()))
     : commands;
+  // Sort to match visual display order (grouped by category)
+  const filtered = [...rawFiltered].sort(
+    (a, b) => categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category)
+  );
 
   useEffect(() => {
     if (open) {
       setQuery('');
-      setSelectedIdx(0);
+      setSelectedIdx(-1);
       setSubPrompt(null);
+      mouseMovedRef.current = false;
       setTimeout(() => inputRef.current?.focus(), 50);
     }
   }, [open]);
 
   useEffect(() => {
-    setSelectedIdx(0);
+    setSelectedIdx(-1);
   }, [query]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -101,7 +108,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
       e.preventDefault();
       setSelectedIdx(i => Math.max(i - 1, 0));
     }
-    if (e.key === 'Enter' && filtered[selectedIdx]) {
+    if (e.key === 'Enter' && selectedIdx >= 0 && filtered[selectedIdx]) {
       filtered[selectedIdx].action();
     }
     if (e.key === 'Escape') {
@@ -117,7 +124,7 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
     { key: 'window', label: 'Window' },
   ];
 
-  let globalIdx = -1;
+  let globalIdx = -1; // increments in render order = same order as filtered (sorted by category)
 
   return (
     <div className="palette-overlay" onClick={onClose}>
@@ -164,7 +171,8 @@ export default function CommandPalette({ open, onClose }: { open: boolean; onClo
                       key={cmd.id}
                       className={`palette-item ${idx === selectedIdx ? 'active' : ''}`}
                       onClick={() => cmd.action()}
-                      onMouseEnter={() => setSelectedIdx(idx)}
+                      onMouseMove={() => { mouseMovedRef.current = true; }}
+                      onMouseEnter={() => { if (mouseMovedRef.current) setSelectedIdx(idx); }}
                     >
                       <Icon size={14} />
                       <span>{cmd.label}</span>

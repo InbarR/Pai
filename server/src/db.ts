@@ -42,6 +42,9 @@ try { db.exec(`ALTER TABLE ImportantEmails ADD COLUMN aiCategory TEXT NOT NULL D
 try { db.exec(`ALTER TABLE ImportantEmails ADD COLUMN aiPriority TEXT NOT NULL DEFAULT ''`); } catch { }
 try { db.exec(`ALTER TABLE ImportantEmails ADD COLUMN aiSummary TEXT NOT NULL DEFAULT ''`); } catch { }
 try { db.exec(`ALTER TABLE ImportantEmails ADD COLUMN aiSuggestedAction TEXT NOT NULL DEFAULT ''`); } catch { }
+try { db.exec(`ALTER TABLE ImportantEmails ADD COLUMN aiActionItems TEXT NOT NULL DEFAULT '[]'`); } catch { }
+try { db.exec(`ALTER TABLE ImportantEmails ADD COLUMN aiDeadlines TEXT NOT NULL DEFAULT '[]'`); } catch { }
+try { db.exec(`ALTER TABLE ImportantEmails ADD COLUMN aiThreadTopic TEXT NOT NULL DEFAULT ''`); } catch { }
 
 // Create tables
 db.exec(`
@@ -135,6 +138,96 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tasks_status ON TaskItems(status);
   CREATE INDEX IF NOT EXISTS idx_emails_received ON ImportantEmails(receivedAt);
   CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON ChatMessages(sessionId);
+
+  CREATE TABLE IF NOT EXISTS AppSettings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+  );
+
+  CREATE TABLE IF NOT EXISTS ChatMemories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    value TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'general',
+    createdAt TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updatedAt TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  );
+
+  -- Memory Graph tables
+  CREATE TABLE IF NOT EXISTS MemoryNodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,  -- person, project, topic, task, decision, meeting, file
+    name TEXT NOT NULL,
+    normalizedName TEXT NOT NULL,  -- lowercase for dedup matching
+    attributes TEXT NOT NULL DEFAULT '{}',  -- JSON blob for flexible metadata
+    firstSeen TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    lastSeen TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    mentions INTEGER NOT NULL DEFAULT 1
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_nodes_dedup ON MemoryNodes(type, normalizedName);
+  CREATE INDEX IF NOT EXISTS idx_memory_nodes_type ON MemoryNodes(type);
+  CREATE INDEX IF NOT EXISTS idx_memory_nodes_name ON MemoryNodes(normalizedName);
+
+  CREATE TABLE IF NOT EXISTS MemoryEdges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fromNodeId INTEGER NOT NULL,
+    toNodeId INTEGER NOT NULL,
+    type TEXT NOT NULL,  -- works_on, attended, owns, related_to, mentioned_in, decided, etc.
+    weight REAL NOT NULL DEFAULT 1.0,
+    attributes TEXT NOT NULL DEFAULT '{}',
+    createdAt TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    lastSeen TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    FOREIGN KEY (fromNodeId) REFERENCES MemoryNodes(id) ON DELETE CASCADE,
+    FOREIGN KEY (toNodeId) REFERENCES MemoryNodes(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_memory_edges_from ON MemoryEdges(fromNodeId);
+  CREATE INDEX IF NOT EXISTS idx_memory_edges_to ON MemoryEdges(toNodeId);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_edges_dedup ON MemoryEdges(fromNodeId, toNodeId, type);
+
+  CREATE TABLE IF NOT EXISTS MemoryFacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nodeId INTEGER NOT NULL,
+    fact TEXT NOT NULL,
+    source TEXT NOT NULL,  -- email, calendar, chat, note, task
+    sourceId TEXT,  -- ID in the source system
+    sourceDetail TEXT,  -- e.g. email subject, meeting title
+    confidence REAL NOT NULL DEFAULT 1.0,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    FOREIGN KEY (nodeId) REFERENCES MemoryNodes(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_memory_facts_node ON MemoryFacts(nodeId);
+  CREATE INDEX IF NOT EXISTS idx_memory_facts_time ON MemoryFacts(timestamp);
+  CREATE INDEX IF NOT EXISTS idx_memory_facts_source ON MemoryFacts(source);
+
+  -- User Preferences (adaptive learning)
+  CREATE TABLE IF NOT EXISTS UserPreferences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,  -- tone, style, priorities, decisions
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.0,  -- 0.0 to 1.0, increases with evidence
+    evidenceCount INTEGER NOT NULL DEFAULT 0,
+    lastEvidence TEXT,  -- description of last signal
+    createdAt TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+    updatedAt TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_user_prefs_key ON UserPreferences(category, key);
+
+  CREATE TABLE IF NOT EXISTS PreferenceSignals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    signalType TEXT NOT NULL,  -- edit, feedback, rating, behavior, response_length, response_time
+    context TEXT NOT NULL DEFAULT '',  -- what was happening
+    value TEXT NOT NULL DEFAULT '',  -- the signal value
+    metadata TEXT NOT NULL DEFAULT '{}',  -- JSON extra data
+    createdAt TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_pref_signals_type ON PreferenceSignals(signalType);
+  CREATE INDEX IF NOT EXISTS idx_pref_signals_time ON PreferenceSignals(createdAt);
 `);
 
 export default db;

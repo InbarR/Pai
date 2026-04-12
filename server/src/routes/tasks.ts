@@ -29,6 +29,15 @@ router.post('/:id/cycle-status', (req, res) => {
   res.json(db.prepare('SELECT * FROM TaskItems WHERE id = ?').get(req.params.id));
 });
 
+router.post('/:id/toggle-done', (req, res) => {
+  const task: any = db.prepare('SELECT * FROM TaskItems WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Not found' });
+
+  const nextStatus = task.status === 2 ? 0 : 2; // toggle done <-> todo
+  db.prepare('UPDATE TaskItems SET status = ? WHERE id = ?').run(nextStatus, req.params.id);
+  res.json(db.prepare('SELECT * FROM TaskItems WHERE id = ?').get(req.params.id));
+});
+
 router.post('/from-clipboard', (req, res) => {
   const { text } = req.body;
   if (!text) return res.status(400).json({ error: 'No text provided' });

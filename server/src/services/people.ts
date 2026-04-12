@@ -43,9 +43,11 @@ export async function searchPeople(query: string): Promise<OrgPerson[]> {
   const q = query.replace(/'/g, "''");
   const script = `
 $results = @()
-$searcher = [adsisearcher]"(&(objectClass=user)(objectCategory=person)(|(displayname=*${q}*)(samaccountname=*${q}*)(mail=*${q}*)))"
+$searcher = [adsisearcher]"(&(objectClass=user)(objectCategory=person)(|(displayname=${q}*)(samaccountname=${q}*)(mail=${q}@*)(displayname=* ${q}*)))"
 $searcher.PropertiesToLoad.AddRange(@('displayname','mail','title','department','physicaldeliveryofficename','telephonenumber','samaccountname','manager'))
-$searcher.SizeLimit = 20
+$searcher.SizeLimit = 15
+$searcher.ServerTimeLimit = [TimeSpan]::FromSeconds(5)
+$searcher.ClientTimeout = [TimeSpan]::FromSeconds(8)
 $found = $searcher.FindAll()
 foreach ($r in $found) {
   $p = $r.Properties
@@ -141,4 +143,85 @@ function mapPerson(p: any): OrgPerson {
     manager: p.Manager || '',
     alias: p.Alias || '',
   };
+}
+
+// Get direct reports of a specific person
+export async function getDirectReports(nameOrAlias: string): Promise<OrgPerson[]> {
+  const q = nameOrAlias.replace(/'/g, "''");
+  const script = `
+$target = [adsisearcher]"(&(objectClass=user)(|(displayname=*${q}*)(samaccountname=${q})))"
+$targetResult = $target.FindOne()
+if (-not $targetResult) { Write-Output '[]'; exit }
+$targetDn = $targetResult.Properties['distinguishedname'][0]
+
+$results = @()
+$searcher = [adsisearcher]"(&(objectClass=user)(objectCategory=person)(manager=$targetDn))"
+$searcher.PropertiesToLoad.AddRange(@('displayname','mail','title','department','physicaldeliveryofficename','telephonenumber','samaccountname','manager'))
+$searcher.SizeLimit = 50
+$found = $searcher.FindAll()
+foreach ($r in $found) {
+  $p = $r.Properties
+  $results += [PSCustomObject]@{
+    Name = if ($p['displayname']) { $p['displayname'][0] } else { '' }
+    Email = if ($p['mail']) { $p['mail'][0] } else { '' }
+    Title = if ($p['title']) { $p['title'][0] } else { '' }
+    Department = if ($p['department']) { $p['department'][0] } else { '' }
+    Office = if ($p['physicaldeliveryofficename']) { $p['physicaldeliveryofficename'][0] } else { '' }
+    Phone = if ($p['telephonenumber']) { $p['telephonenumber'][0] } else { '' }
+    Alias = if ($p['samaccountname']) { $p['samaccountname'][0] } else { '' }
+    Manager = ''
+  }
+}
+if ($results.Count -eq 0) { Write-Output '[]' }
+elseif ($results.Count -eq 1) { Write-Output (ConvertTo-Json @($results) -Compress) }
+else { Write-Output ($results | ConvertTo-Json -Compress) }
+`;
+  return parseJson(runPowerShell(script)).map(mapPerson);
+}
+
+// Get manager chain (up to 5 levels)
+export async function getManagerChain(nameOrAlias: string): Promise<OrgPerson[]> {
+  const q = nameOrAlias.replace(/'/g, "''");
+  const script = `
+$results = @()
+$filter = "(&(objectClass=user)(objectCategory=person)(|(displayname=*${q}*)(samaccountname=${q})(mail=${q}@*)))"
+$s = [adsisearcher]$filter
+$s.PropertiesToLoad.AddRange(@('displayname','mail','title','department','physicaldeliveryofficename','telephonenumber','samaccountname','manager','distinguishedname'))
+$r = $s.FindOne()
+if (-not $r) { Write-Output '[]'; exit }
+
+for ($i = 0; $i -lt 5; $i++) {
+  $mgrDn = $r.Properties['manager']
+  if (-not $mgrDn -or $mgrDn.Count -eq 0) { break }
+  $dn = $mgrDn[0]
+  try {
+    $escapedDn = [System.Security.Principal.SecurityIdentifier]::new(0) # dummy
+  } catch {}
+  # Use LDAP path directly to avoid filter escaping issues with parens in DN
+  $de = [adsi]"LDAP://$dn"
+  if (-not $de.Path) { break }
+  # Wrap in a search from the entry
+  $ms = New-Object DirectoryServices.DirectorySearcher($de)
+  $ms.SearchScope = 'Base'
+  $ms.Filter = '(objectClass=user)'
+  $ms.PropertiesToLoad.AddRange(@('displayname','mail','title','department','physicaldeliveryofficename','telephonenumber','samaccountname','manager'))
+  $r = $ms.FindOne()
+  if (-not $r) { break }
+  $p = $r.Properties
+  $results += [PSCustomObject]@{
+    Name = if ($p['displayname']) { $p['displayname'][0] } else { '' }
+    Email = if ($p['mail']) { $p['mail'][0] } else { '' }
+    Title = if ($p['title']) { $p['title'][0] } else { '' }
+    Department = if ($p['department']) { $p['department'][0] } else { '' }
+    Office = if ($p['physicaldeliveryofficename']) { $p['physicaldeliveryofficename'][0] } else { '' }
+    Phone = if ($p['telephonenumber']) { $p['telephonenumber'][0] } else { '' }
+    Alias = if ($p['samaccountname']) { $p['samaccountname'][0] } else { '' }
+    Manager = ''
+  }
+}
+if ($results.Count -eq 0) { Write-Output '[]' }
+elseif ($results.Count -eq 1) { Write-Output (ConvertTo-Json @($results) -Compress) }
+else { Write-Output ($results | ConvertTo-Json -Compress) }
+`;
+  return parseJson(runPowerShell(script)).map(mapPerson);
 }

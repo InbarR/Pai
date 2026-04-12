@@ -66,6 +66,16 @@ export interface ImportantEmail {
   isActioned: number;
 }
 
+export interface CalendarEvent {
+  subject: string;
+  start: string;
+  end: string;
+  location: string;
+  organizer: string;
+  isOnline: boolean;
+  joinUrl: string;
+}
+
 export interface DashboardData {
   activeReminderCount: number;
   nextReminder: Reminder | null;
@@ -77,4 +87,5 @@ export interface DashboardData {
   upcomingReminders: Reminder[];
   recentTasks: TaskItem[];
   recentEmails: ImportantEmail[];
+  todayMeetings: CalendarEvent[];
 }
