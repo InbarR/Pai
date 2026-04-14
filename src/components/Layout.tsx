@@ -8,10 +8,7 @@ import {
 } from 'lucide-react';
 import ChatPanel from './chat/ChatPanel';
 
-// Mode is now explicit state, not based on window width
-
 export default function Layout({ children }: { children: ReactNode }) {
-  const [pinned, setPinned] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
   const [chatWidth, setChatWidth] = useState(380);
   const resizingRef = useRef(false);
@@ -172,7 +169,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   // === FULL MODE: sidebar + content + chat panel (wide window) ===
   return (
     <div className="app-layout">
-      <aside className={`sidebar ${pinned ? 'pinned' : ''}`}>
+      <aside className="sidebar">
         <div className="sidebar-brand" onClick={goSidecar} style={{ cursor: 'pointer' }} title="Sidecar (Esc)">
           <div className="brand-dot" />
           <h1>Brian</h1>
@@ -189,7 +186,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
         </nav>
-        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div className="sidebar-footer">
           <NavLink to="/settings" className={({ isActive }) => `sidebar-pin ${isActive ? 'active' : ''}`}
             title="Settings" style={{ textDecoration: 'none' }}>
             <Settings size={16} />

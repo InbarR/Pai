@@ -107,15 +107,12 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   overflow-y: auto;
 }
 
-.sidebar:hover, .sidebar.pinned { width: 260px; }
-
-.sidebar:hover .sidebar-brand h1,
-.sidebar:hover a span,
-.sidebar.pinned .sidebar-brand h1,
-.sidebar.pinned a span { opacity: 1; }
-
-.sidebar:hover .sidebar-pin,
-.sidebar.pinned .sidebar-pin { opacity: 1; }
+.sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 
 .sidebar-brand h1,
 .sidebar a span {
@@ -144,8 +141,6 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   transform: none;
   box-shadow: none;
 }
-
-.sidebar.pinned .sidebar-pin { color: var(--accent); }
 .sidebar-hint-btn { display: flex; align-items: center; gap: 6px; }
 .sidebar-hint-btn kbd { font-size: 9px; color: var(--text-muted); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 3px; padding: 1px 4px; font-family: inherit; }
 
@@ -2505,7 +2500,7 @@ label.checkbox input[type="checkbox"] {
   gap: 10px;
   padding: 12px 18px;
   border-radius: var(--radius);
-  background: var(--bg-elevated);
+  background: var(--bg-surface);
   border: 1px solid var(--border);
   color: var(--text-primary);
   font-size: 13px;
@@ -2513,7 +2508,6 @@ label.checkbox input[type="checkbox"] {
   pointer-events: auto;
   animation: toast-in 0.3s ease-out;
   max-width: 380px;
-  backdrop-filter: blur(12px);
 }
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(12px) scale(0.95); }
