@@ -45,7 +45,7 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
     },
-    backgroundColor: '#0a0a0f',
+    backgroundColor: '#212121',
     frame: false,
     transparent: false,
     alwaysOnTop: false,
@@ -58,6 +58,35 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // Enable spellcheck
+  mainWindow.webContents.session.setSpellCheckerLanguages(['en-US']);
+
+  // Right-click context menu with spellcheck + copy/paste
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    const menuItems = [];
+
+    // Spellcheck suggestions
+    if (params.misspelledWord && params.dictionarySuggestions.length > 0) {
+      for (const suggestion of params.dictionarySuggestions.slice(0, 5)) {
+        menuItems.push({
+          label: suggestion,
+          click: () => mainWindow.webContents.replaceMisspelling(suggestion),
+        });
+      }
+      menuItems.push({ type: 'separator' });
+    }
+
+    // Standard edit operations
+    if (params.editFlags.canCut) menuItems.push({ role: 'cut' });
+    if (params.editFlags.canCopy || params.selectionText) menuItems.push({ role: 'copy' });
+    if (params.editFlags.canPaste) menuItems.push({ role: 'paste' });
+    if (params.editFlags.canSelectAll) menuItems.push({ role: 'selectAll' });
+
+    if (menuItems.length > 0) {
+      Menu.buildFromTemplate(menuItems).popup();
+    }
   });
 
   if (isDev) {
