@@ -4,13 +4,14 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import {
   MessageCircle, Sparkles, CheckSquare, Bell, Mail, FolderOpen, Users,
-  PanelLeftClose, PanelRightClose, Settings,
+  PanelLeftClose, PanelRightClose, Settings, Menu, X,
 } from 'lucide-react';
 import ChatPanel from './chat/ChatPanel';
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [chatOpen, setChatOpen] = useState(true);
   const [chatWidth, setChatWidth] = useState(380);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const resizingRef = useRef(false);
   const isElectron = !!(window as any).brian?.isElectron;
   const [mode, setMode] = useState<'sidecar' | 'wide' | 'full'>(isElectron ? 'sidecar' : 'full');
@@ -119,19 +120,28 @@ export default function Layout({ children }: { children: ReactNode }) {
     { to: '/emails', label: 'Emails', icon: Mail, count: counts?.emails || 0 },
   ];
 
-  // === SIDECAR MODE: chat only (narrow window) ===
+  // === COMPANION MODE: chat only (narrow window) with slide-out sidebar ===
   if (isSidecar) {
     return (
       <div className="app-layout chat-mode">
         <div className="chat-mode-main">
           <div className="chat-mode-topbar">
             <div className="flex items-center gap-2">
+              <button
+                className="win-btn"
+                onClick={() => setDrawerOpen(true)}
+                title="Open menu"
+                style={{ marginRight: 4 }}
+              >
+                <Menu size={16} />
+              </button>
               <div className="brand-dot" />
               <span style={{ fontWeight: 700, fontSize: 14 }}>Brian</span>
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>Companion</span>
             </div>
             <div className="win-controls">
               <button className="win-btn" onClick={() => { try { (window as any).brian?.minimize?.(); } catch {} }} title="Minimize">&#x2013;</button>
-              <button className="win-btn" onClick={goFull} title="Full layout">&#x25A1;</button>
+              <button className="win-btn" onClick={goFull} title="Expand to full layout">&#x25A1;</button>
               <button className="win-btn close" onClick={() => { try { (window as any).brian?.hide?.(); } catch {} }} title="Close to tray">&#x2715;</button>
             </div>
           </div>
@@ -147,21 +157,70 @@ export default function Layout({ children }: { children: ReactNode }) {
             } catch {}
           }} />
         </div>
-        <div className={`chat-mode-nav ${altHeld ? 'alt-held' : ''}`}>
-          {navItems.map(({ to, label, icon: Icon, count }, idx) => (
-            <NavLink key={to} to={to} end={to === '/'} title={`${label} (Alt+${idx + 1})`}
-              className={({ isActive }) => `chat-nav-item ${isActive && to !== '/' ? 'active' : ''}`}
-              onClick={goFull}>
-              <Icon size={16} />
-              {count > 0 && <span className="chat-nav-count">{count}</span>}
-              <span className="chat-nav-hint">({idx + 1})</span>
-            </NavLink>
-          ))}
-          <NavLink to="/settings" className={({ isActive }) => `chat-nav-item ${isActive ? 'active' : ''}`}
-            title="Settings" onClick={goFull}>
-            <Settings size={16} />
-          </NavLink>
-        </div>
+
+        {drawerOpen && (
+          <>
+            <div className="companion-drawer-backdrop" onClick={() => setDrawerOpen(false)} />
+            <aside className="companion-drawer">
+              <div className="sidebar-brand" style={{ justifyContent: 'space-between' }}>
+                <div className="flex items-center gap-2">
+                  <div className="brand-dot" />
+                  <h1>Brian</h1>
+                </div>
+                <button className="win-btn" onClick={() => setDrawerOpen(false)} title="Close menu">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="sidebar-top-actions">
+                <button
+                  className="sidebar-action primary"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent('brian-new-chat'));
+                    setDrawerOpen(false);
+                  }}
+                  title="New chat"
+                >
+                  <MessageCircle size={16} />
+                  <span>New chat</span>
+                </button>
+              </div>
+
+              <div className="sidebar-section-label">Workspace</div>
+              <nav className="sidebar-nav">
+                {navItems.map(({ to, label, icon: Icon, count }, idx) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={to === '/'}
+                    title={`${label} (Alt+${idx + 1})`}
+                    className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+                    onClick={() => { setDrawerOpen(false); goFull(); }}
+                  >
+                    <Icon size={16} />
+                    <span>{label}</span>
+                    {count > 0 && <span className="nav-count">{count}</span>}
+                  </NavLink>
+                ))}
+              </nav>
+
+              <div className="sidebar-footer">
+                <NavLink
+                  to="/settings"
+                  className={({ isActive }) => `sidebar-user ${isActive ? 'active' : ''}`}
+                  title="Settings"
+                  style={{ textDecoration: 'none' }}
+                  onClick={() => { setDrawerOpen(false); goFull(); }}
+                >
+                  <div className="sidebar-user-avatar">
+                    <Settings size={14} />
+                  </div>
+                  <span>Settings</span>
+                </NavLink>
+              </div>
+            </aside>
+          </>
+        )}
       </div>
     );
   }
@@ -170,7 +229,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="app-layout">
       <aside className="sidebar">
-        <div className="sidebar-brand" onClick={goSidecar} style={{ cursor: 'pointer' }} title="Sidecar (Esc)">
+        <div className="sidebar-brand" onClick={goSidecar} style={{ cursor: 'pointer' }} title="Switch to Companion mode (Esc)">
           <div className="brand-dot" />
           <h1>Brian</h1>
         </div>
@@ -265,7 +324,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               <button className="win-btn" onClick={() => { try { (window as any).brian?.minimize?.(); } catch {} }} title="Minimize">&#x2013;</button>
               <button className="win-btn close" onClick={() => { try { (window as any).brian?.hide?.(); } catch {} }} title="Close to tray">&#x2715;</button>
             </div>
-            <button className="ghost" onClick={goSidecar} title="Switch to sidecar (Alt+F)">
+            <button className="ghost" onClick={goSidecar} title="Switch to Companion mode (Alt+F)">
               <PanelRightClose size={16} />
             </button>
             <button className="ghost" onClick={() => setChatOpen(false)} title="Close chat">

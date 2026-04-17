@@ -220,6 +220,13 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
     return () => window.removeEventListener('keydown', handler, true);
   }, []);
 
+  // Listen for "new chat" event from sidebar
+  useEffect(() => {
+    const handler = () => { newSession(); };
+    window.addEventListener('brian-new-chat', handler);
+    return () => window.removeEventListener('brian-new-chat', handler);
+  }, []);
+
   // Persist chat state to sessionStorage
   useEffect(() => {
     sessionStorage.setItem('brian-messages', JSON.stringify(
