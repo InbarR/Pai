@@ -149,10 +149,16 @@ async function ensureCopilotToken(): Promise<string> {
 
 // --- Models ---
 
-export async function getModels(): Promise<string[]> {
-  const token = await ensureCopilotToken();
+const FALLBACK_MODELS = [
+  'gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-5.4',
+  'claude-sonnet-4.5', 'claude-sonnet-4', 'claude-opus-4.5',
+  'gemini-2.5-pro',
+];
 
+export async function getModels(): Promise<string[]> {
   try {
+    const token = await ensureCopilotToken();
+
     const res = await fetch(`${COPILOT_BASE_URL}/models`, {
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -164,16 +170,17 @@ export async function getModels(): Promise<string[]> {
       },
     });
 
-    if (!res.ok) return [];
+    if (!res.ok) return FALLBACK_MODELS;
     const data = await res.json() as any;
 
     if (data.data && Array.isArray(data.data)) {
-      return data.data
+      const models = data.data
         .map((m: any) => m.id)
         .filter((id: string) => !!id);
+      return models.length > 0 ? models : FALLBACK_MODELS;
     }
   } catch { }
-  return [];
+  return FALLBACK_MODELS;
 }
 
 // --- Chat completion ---

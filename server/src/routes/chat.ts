@@ -480,7 +480,7 @@ router.get('/models', async (req, res) => {
     const models = await getModels();
     res.json(models);
   } catch (err: any) {
-    res.json([]);
+    res.json(['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'claude-sonnet-4.5', 'claude-sonnet-4']);
   }
 });
 
