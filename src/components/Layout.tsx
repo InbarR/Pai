@@ -96,6 +96,13 @@ export default function Layout({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Open companion drawer from chat toolbar
+  useEffect(() => {
+    const handler = () => setDrawerOpen(true);
+    window.addEventListener('brian-open-drawer', handler);
+    return () => window.removeEventListener('brian-open-drawer', handler);
+  }, []);
+
   const { data: counts } = useQuery({
     queryKey: ['nav-counts'],
     queryFn: async () => {
@@ -127,13 +134,6 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="chat-mode-main">
           <div className="chat-mode-topbar">
             <div className="flex items-center gap-2">
-              <button
-                className="companion-menu-btn"
-                onClick={() => setDrawerOpen(true)}
-                title="Open menu"
-              >
-                <Menu size={18} />
-              </button>
               <div className="brand-dot" />
               <span style={{ fontWeight: 700, fontSize: 14 }}>Brian</span>
               <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>Companion</span>

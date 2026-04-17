@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
-import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square, Copy, X, Mic, MicOff, Maximize2 } from 'lucide-react';
+import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square, Copy, X, Mic, MicOff, Maximize2, Menu } from 'lucide-react';
 import BrianMascot from './BrianMascot';
 
 interface Message {
@@ -728,6 +728,9 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
 
       {/* Mini toolbar */}
       <div className="chat-toolbar">
+        <button className="ghost" onClick={() => window.dispatchEvent(new CustomEvent('brian-open-drawer'))} title="Menu">
+          <Menu size={14} />
+        </button>
         <button className="ghost" onClick={() => setShowHistory(true)} title="Chat history (Ctrl+H)">
           <History size={14} />
         </button>
