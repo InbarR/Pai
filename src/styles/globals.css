@@ -133,7 +133,8 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   gap: 12px;
   padding: 10px 12px;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
+  font-family: inherit;
   color: var(--text-primary);
   background: transparent;
   border: none;
@@ -144,6 +145,7 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   transition: background 0.15s;
 }
 
+.sidebar-action span { font-weight: 400; }
 .sidebar-action:hover { background: var(--bg-hover); }
 
 .sidebar-action.primary {
@@ -289,6 +291,39 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
 }
 
 /* Companion mode slide-out drawer */
+.companion-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px 12px 16px;
+  -webkit-app-region: drag;
+}
+.companion-drawer-header > * { -webkit-app-region: no-drag; }
+.companion-drawer-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: white;
+  margin: 0;
+}
+
+.drawer-close-btn {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.drawer-close-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.drawer-close-btn svg { stroke: currentColor; display: block; }
+
 .companion-menu-btn {
   -webkit-app-region: no-drag;
   display: flex;

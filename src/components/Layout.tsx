@@ -161,13 +161,13 @@ export default function Layout({ children }: { children: ReactNode }) {
           <>
             <div className="companion-drawer-backdrop" onClick={() => setDrawerOpen(false)} />
             <aside className="sidebar companion-drawer">
-              <div className="sidebar-brand" style={{ justifyContent: 'space-between' }}>
+              <div className="companion-drawer-header">
                 <div className="flex items-center gap-2">
                   <div className="brand-dot" />
-                  <h1>Brian</h1>
+                  <h1 className="companion-drawer-title">Brian</h1>
                 </div>
-                <button className="win-btn" onClick={() => setDrawerOpen(false)} title="Close menu">
-                  <X size={16} />
+                <button className="drawer-close-btn" onClick={() => setDrawerOpen(false)} title="Close menu">
+                  <X size={18} />
                 </button>
               </div>
 
