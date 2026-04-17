@@ -194,7 +194,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                     end={to === '/'}
                     title={`${label} (Alt+${idx + 1})`}
                     className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-                    onClick={() => { setDrawerOpen(false); goFull(); }}
+                    onClick={() => setDrawerOpen(false)}
                   >
                     <Icon size={16} />
                     <span>{label}</span>
@@ -209,7 +209,7 @@ export default function Layout({ children }: { children: ReactNode }) {
                   className={({ isActive }) => `sidebar-user ${isActive ? 'active' : ''}`}
                   title="Settings"
                   style={{ textDecoration: 'none' }}
-                  onClick={() => { setDrawerOpen(false); goFull(); }}
+                  onClick={() => setDrawerOpen(false)}
                 >
                   <div className="sidebar-user-avatar">
                     <Settings size={14} />
@@ -318,17 +318,10 @@ export default function Layout({ children }: { children: ReactNode }) {
             <MessageCircle size={16} />
             <span style={{ fontWeight: 600, fontSize: 14 }}>Brian</span>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="win-controls">
-              <button className="win-btn" onClick={() => { try { (window as any).brian?.minimize?.(); } catch {} }} title="Minimize">&#x2013;</button>
-              <button className="win-btn close" onClick={() => { try { (window as any).brian?.hide?.(); } catch {} }} title="Close to tray">&#x2715;</button>
-            </div>
-            <button className="ghost" onClick={goSidecar} title="Switch to Companion mode (Alt+F)">
-              <PanelRightClose size={16} />
-            </button>
-            <button className="ghost" onClick={() => setChatOpen(false)} title="Close chat">
-              <PanelLeftClose size={16} />
-            </button>
+          <div className="win-controls">
+            <button className="win-btn" onClick={() => { try { (window as any).brian?.minimize?.(); } catch {} }} title="Minimize">&#x2013;</button>
+            <button className="win-btn" onClick={goSidecar} title="Companion mode (Alt+F)">&#x25A1;</button>
+            <button className="win-btn close" onClick={() => { try { (window as any).brian?.hide?.(); } catch {} }} title="Close to tray">&#x2715;</button>
           </div>
         </div>
         {chatOpen && <ChatPanel onChatFullscreen={() => { goSidecar(); setTimeout(() => { try { (window as any).brian?.maximize?.(); } catch {} }, 100); }} />}
