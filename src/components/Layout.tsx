@@ -174,27 +174,44 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="brand-dot" />
           <h1>Brian</h1>
         </div>
+
+        <div className="sidebar-top-actions">
+          <button
+            className="sidebar-action primary"
+            onClick={() => {
+              navigate('/');
+              window.dispatchEvent(new CustomEvent('brian-new-chat'));
+              if (!chatOpen) setChatOpen(true);
+            }}
+            title="New chat"
+          >
+            <MessageCircle size={16} />
+            <span>New chat</span>
+          </button>
+        </div>
+
+        <div className="sidebar-section-label">Workspace</div>
         <nav className={`sidebar-nav ${altHeld ? 'alt-held' : ''}`}>
           {navItems.map(({ to, label, icon: Icon, count }, idx) => (
             <NavLink key={to} to={to} end={to === '/'} title={`${label} (Alt+${idx + 1})`}
               data-tooltip={label}
               className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              <span className="nav-shortcut">[{idx + 1}]</span>
-              <Icon size={18} />
+              <Icon size={16} />
               <span>{label}</span>
               {count > 0 && <span className="nav-count">{count}</span>}
+              <span className="nav-shortcut">{idx + 1}</span>
             </NavLink>
           ))}
         </nav>
+
         <div className="sidebar-footer">
-          <NavLink to="/settings" className={({ isActive }) => `sidebar-pin ${isActive ? 'active' : ''}`}
+          <NavLink to="/settings" className={({ isActive }) => `sidebar-user ${isActive ? 'active' : ''}`}
             title="Settings" style={{ textDecoration: 'none' }}>
-            <Settings size={16} />
+            <div className="sidebar-user-avatar">
+              <Settings size={14} />
+            </div>
+            <span>Settings</span>
           </NavLink>
-          <button className={`sidebar-pin ${chatOpen ? 'active' : ''}`}
-            onClick={() => setChatOpen(!chatOpen)} title={chatOpen ? 'Close chat' : 'Open chat'}>
-            <MessageCircle size={16} />
-          </button>
         </div>
       </aside>
 
