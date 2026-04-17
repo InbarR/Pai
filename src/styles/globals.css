@@ -289,6 +289,24 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
 }
 
 /* Companion mode slide-out drawer */
+.companion-menu-btn {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  margin-right: 4px;
+  transition: background 0.15s;
+}
+.companion-menu-btn:hover { background: var(--bg-hover); }
+.companion-menu-btn svg { stroke: var(--text-primary); display: block; }
+
 .companion-drawer-backdrop {
   position: fixed;
   inset: 0;

@@ -128,12 +128,11 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="chat-mode-topbar">
             <div className="flex items-center gap-2">
               <button
-                className="win-btn"
+                className="companion-menu-btn"
                 onClick={() => setDrawerOpen(true)}
                 title="Open menu"
-                style={{ marginRight: 4 }}
               >
-                <Menu size={16} />
+                <Menu size={18} />
               </button>
               <div className="brand-dot" />
               <span style={{ fontWeight: 700, fontSize: 14 }}>Brian</span>
