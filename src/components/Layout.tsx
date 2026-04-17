@@ -160,7 +160,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         {drawerOpen && (
           <>
             <div className="companion-drawer-backdrop" onClick={() => setDrawerOpen(false)} />
-            <aside className="companion-drawer">
+            <aside className="sidebar companion-drawer">
               <div className="sidebar-brand" style={{ justifyContent: 'space-between' }}>
                 <div className="flex items-center gap-2">
                   <div className="brand-dot" />
