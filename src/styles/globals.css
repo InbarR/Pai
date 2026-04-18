@@ -292,6 +292,31 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
 }
 
 /* Companion mode slide-out drawer */
+.companion-page {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 24px 20px;
+}
+
+.companion-back-btn {
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  margin-right: 4px;
+  transition: background 0.15s;
+}
+.companion-back-btn:hover { background: var(--bg-hover); }
+
 .companion-drawer-header {
   display: flex;
   align-items: center;

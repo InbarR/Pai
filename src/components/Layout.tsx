@@ -127,6 +127,9 @@ export default function Layout({ children }: { children: ReactNode }) {
     { to: '/emails', label: 'Emails', icon: Mail, count: counts?.emails || 0 },
   ];
 
+  // In companion mode, root path "/" shows the chat. Other paths show the routed page.
+  const showCompanionPage = isSidecar && location.pathname !== '/';
+
   // === COMPANION MODE: chat only (narrow window) with slide-out sidebar ===
   if (isSidecar) {
     return (
@@ -134,6 +137,15 @@ export default function Layout({ children }: { children: ReactNode }) {
         <div className="chat-mode-main">
           <div className="chat-mode-topbar">
             <div className="flex items-center gap-2">
+              {showCompanionPage && (
+                <button
+                  className="companion-back-btn"
+                  onClick={() => navigate('/')}
+                  title="Back to chat"
+                >
+                  ←
+                </button>
+              )}
               <div className="brand-dot" />
               <span style={{ fontWeight: 700, fontSize: 14 }}>Brian</span>
               <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 4 }}>Companion</span>
@@ -144,17 +156,23 @@ export default function Layout({ children }: { children: ReactNode }) {
               <button className="win-btn close" onClick={() => { try { (window as any).brian?.hide?.(); } catch {} }} title="Close to tray">&#x2715;</button>
             </div>
           </div>
-          <ChatPanel onChatFullscreen={() => {
-            try {
-              if (chatMaximizedRef.current) {
-                (window as any).brian?.sidecar?.('right');
-                chatMaximizedRef.current = false;
-              } else {
-                (window as any).brian?.maximize?.();
-                chatMaximizedRef.current = true;
-              }
-            } catch {}
-          }} />
+          {showCompanionPage ? (
+            <div className="companion-page">
+              <div className="page-transition" key={location.pathname}>{children}</div>
+            </div>
+          ) : (
+            <ChatPanel onChatFullscreen={() => {
+              try {
+                if (chatMaximizedRef.current) {
+                  (window as any).brian?.sidecar?.('right');
+                  chatMaximizedRef.current = false;
+                } else {
+                  (window as any).brian?.maximize?.();
+                  chatMaximizedRef.current = true;
+                }
+              } catch {}
+            }} />
+          )}
         </div>
 
         {drawerOpen && (
