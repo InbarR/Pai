@@ -135,7 +135,7 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   font-size: 14px;
   font-weight: 400;
   font-family: inherit;
-  color: var(--text-primary);
+  color: var(--text-primary) !important;
   background: transparent;
   border: none;
   border-radius: 8px;
@@ -145,7 +145,8 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   transition: background 0.15s;
 }
 
-.sidebar-action span { font-weight: 400; }
+.sidebar-action svg { color: var(--text-primary); stroke: currentColor; }
+.sidebar-action span { font-weight: 400; color: var(--text-primary); }
 .sidebar-action:hover { background: var(--bg-hover); }
 
 .sidebar-action.primary {
