@@ -211,7 +211,9 @@ export default function NotesPage() {
               className={`task-row ${isDone ? 'done' : ''} ${isExpanded ? 'expanded' : ''}`}
               onContextMenu={e => {
                 e.preventDefault();
-                setContextMenu({ x: e.clientX, y: e.clientY, id: note.id });
+                const menuWidth = 220;
+                const x = Math.min(e.clientX, window.innerWidth - menuWidth - 8);
+                setContextMenu({ x: Math.max(8, x), y: e.clientY, id: note.id });
               }}
             >
               <div className="task-row-main">
@@ -258,7 +260,9 @@ export default function NotesPage() {
                   onClick={e => {
                     e.stopPropagation();
                     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                    setContextMenu({ x: rect.left, y: rect.bottom + 4, id: note.id });
+                    const menuWidth = 220;
+                    const x = Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8);
+                    setContextMenu({ x: Math.max(8, x), y: rect.bottom + 4, id: note.id });
                   }}
                   title="More actions"
                 >

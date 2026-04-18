@@ -682,10 +682,17 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
 }
 
 /* Context menu enhancements */
+.task-context-menu {
+  min-width: 200px;
+  max-width: 240px;
+}
 .task-context-menu button {
   display: flex;
   align-items: center;
   gap: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .task-context-datepicker {
   padding: 8px;
