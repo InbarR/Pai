@@ -301,10 +301,23 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
 
 /* Reset full-page negative margins inside narrow companion view */
 .companion-page .notes-layout,
-.companion-page .notes-layout-simple {
+.companion-page .notes-layout-simple,
+.companion-page .emails-layout {
   margin: 0;
   height: auto;
   min-height: calc(100vh - 100px);
+}
+
+.companion-page .emails-layout {
+  height: calc(100vh - 64px);
+}
+
+.companion-page .email-folders-panel {
+  width: 150px;
+}
+
+.companion-page .emails-list-panel {
+  width: 280px;
 }
 
 .companion-page .todo-list-panel {
