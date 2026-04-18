@@ -146,13 +146,27 @@ export default function NotesPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const due = new Date(d);
+    const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
     due.setHours(0, 0, 0, 0);
     const diff = Math.round((due.getTime() - today.getTime()) / 86_400_000);
-    if (diff === 0) return 'Today';
-    if (diff === 1) return 'Tomorrow';
-    if (diff === -1) return 'Yesterday';
-    if (diff > 0 && diff < 7) return d.toLocaleDateString(undefined, { weekday: 'short' });
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const time = hasTime ? ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+    if (diff === 0) return 'Today' + time;
+    if (diff === 1) return 'Tomorrow' + time;
+    if (diff === -1) return 'Yesterday' + time;
+    if (diff > 0 && diff < 7) return d.toLocaleDateString(undefined, { weekday: 'short' }) + time;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + time;
+  };
+
+  const toLocalIsoMinute = (d: Date) => {
+    const tz = d.getTimezoneOffset() * 60_000;
+    return new Date(d.getTime() - tz).toISOString().slice(0, 16); // YYYY-MM-DDTHH:mm in local
+  };
+  const toInputValue = (iso: string | null | undefined) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    // If it's date-only (no time), assume local midnight; if iso, convert to local datetime-local
+    return toLocalIsoMinute(d);
   };
 
   return (
@@ -251,7 +265,7 @@ export default function NotesPage() {
                 )}
 
                 {note.dueDate && (
-                  <span className={`task-row-due ${new Date(note.dueDate) < new Date(new Date().setHours(0, 0, 0, 0)) ? 'overdue' : ''}`}>
+                  <span className={`task-row-due ${new Date(note.dueDate) < new Date() ? 'overdue' : ''}`}>
                     <Calendar size={11} /> {formatDue(note.dueDate)}
                   </span>
                 )}
@@ -365,27 +379,28 @@ export default function NotesPage() {
             <div className="task-context-datepicker">
               <div className="task-context-date-quicks">
                 <button onClick={() => {
-                  const today = new Date().toISOString().split('T')[0];
-                  updateField(activeForMenu.id, { dueDate: today });
+                  const t = new Date(); t.setHours(17, 0, 0, 0);
+                  updateField(activeForMenu.id, { dueDate: t.toISOString() });
                   setContextMenu(null);
-                }}>Today</button>
+                }}>Today 5pm</button>
                 <button onClick={() => {
-                  const t = new Date(); t.setDate(t.getDate() + 1);
-                  updateField(activeForMenu.id, { dueDate: t.toISOString().split('T')[0] });
+                  const t = new Date(); t.setDate(t.getDate() + 1); t.setHours(9, 0, 0, 0);
+                  updateField(activeForMenu.id, { dueDate: t.toISOString() });
                   setContextMenu(null);
-                }}>Tomorrow</button>
+                }}>Tomorrow 9am</button>
                 <button onClick={() => {
-                  const t = new Date(); t.setDate(t.getDate() + 7);
-                  updateField(activeForMenu.id, { dueDate: t.toISOString().split('T')[0] });
+                  const t = new Date(); t.setDate(t.getDate() + 7); t.setHours(9, 0, 0, 0);
+                  updateField(activeForMenu.id, { dueDate: t.toISOString() });
                   setContextMenu(null);
                 }}>Next week</button>
               </div>
               <input
-                type="date"
+                type="datetime-local"
                 className="task-context-date-input"
-                value={activeForMenu.dueDate || ''}
+                value={toInputValue(activeForMenu.dueDate)}
                 onChange={e => {
-                  updateField(activeForMenu.id, { dueDate: e.target.value || null });
+                  const val = e.target.value;
+                  updateField(activeForMenu.id, { dueDate: val ? new Date(val).toISOString() : null });
                   setContextMenu(null);
                 }}
               />
