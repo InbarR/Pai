@@ -242,7 +242,7 @@ export default function NotesPage() {
                     onDoubleClick={() => startEditTitle(note)}
                     title="Click to expand · Double-click to rename"
                   >
-                    {note.isPinned && <Pin size={11} className="task-row-pin" />}
+                    {!!note.isPinned && <Pin size={11} className="task-row-pin" />}
                     {note.title || 'Untitled'}
                   </div>
                 )}
