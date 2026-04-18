@@ -593,6 +593,9 @@ router.post('/stream', async (req: Request, res: Response) => {
     const sendStatus = (status: string) => {
       res.write(`data: ${JSON.stringify({ status })}\n\n`);
     };
+    const sendSource = (source: { label: string; kind: string; query?: string; count?: number; items?: any[] }) => {
+      res.write(`data: ${JSON.stringify({ source })}\n\n`);
+    };
 
     // For draft mode, stream directly without building full context
     if (isDraftMode) {
@@ -692,10 +695,37 @@ router.post('/stream', async (req: Request, res: Response) => {
           }
         }
 
-        const sources: string[] = [];
-        if (adResults.length > 0) sources.push(`Microsoft Graph /people (${adResults.length} hit${adResults.length === 1 ? '' : 's'})`);
-        if (emailCount > 0) sources.push(`Local email index (${emailCount} match${emailCount === 1 ? '' : 'es'})`);
-        if (sources.length) reply += `\n\n_Sources: ${sources.join(' · ')}_`;
+        if (adResults.length > 0) {
+          sendSource({
+            label: 'Microsoft Graph /people',
+            kind: 'directory',
+            query: personName,
+            count: adResults.length,
+            items: adResults.slice(0, 10).map(r => ({
+              name: r.name,
+              title: r.title,
+              department: r.department,
+              email: r.email,
+              phone: r.phone,
+              office: r.office,
+              manager: r.manager,
+            })),
+          });
+        }
+        if (emailCount > 0) {
+          sendSource({
+            label: 'Local email index',
+            kind: 'email',
+            query: personName,
+            count: emailCount,
+            items: emailResults.data.slice(0, 10).map((e: any) => ({
+              subject: e.subject,
+              from: e.from || e.fromName,
+              date: e.date,
+              preview: (e.bodyPreview || '').slice(0, 200),
+            })),
+          });
+        }
 
         const words = reply.split(' ');
         for (let i = 0; i < words.length; i++) {
@@ -725,7 +755,10 @@ router.post('/stream', async (req: Request, res: Response) => {
       ...(isSimpleMessage ? messages.slice(-5) : messages),
     ];
 
-    const pass1Model = isSimpleMessage ? 'gpt-4o' : model;
+    // Honor the user's explicit model choice. Only fall back to gpt-4o for
+    // very short simple messages when the user didn't pick a specific model.
+    const userPickedModel = !!model && model !== 'gpt-4o';
+    const pass1Model = isSimpleMessage && !userPickedModel ? 'gpt-4o' : (model || 'gpt-4o');
 
     sendStatus(`Asking ${pass1Model}...`);
 

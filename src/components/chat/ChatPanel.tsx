@@ -2,14 +2,23 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
-import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square, Copy, X, Mic, MicOff, Maximize2, Menu, Brain } from 'lucide-react';
+import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square, Copy, X, Mic, MicOff, Maximize2, Menu, Brain, Database } from 'lucide-react';
 import BrianMascot from './BrianMascot';
+
+interface SourceRef {
+  label: string;
+  kind: string;
+  query?: string;
+  count?: number;
+  items?: any[];
+}
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: string;
   thinking?: string[];
+  sources?: SourceRef[];
 }
 
 interface ChatSession {
@@ -95,6 +104,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
   const [voiceActive, setVoiceActive] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
+  const [openSource, setOpenSource] = useState<string | null>(null); // `${msgIdx}:${srcIdx}`
   const recognitionRef = useRef<any>(null);
 
   const startVoice = () => {
@@ -465,6 +475,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
       const decoder = new TextDecoder();
       let assistantMsg = '';
       const thinkingTrace: string[] = [];
+      const sourcesList: SourceRef[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -488,11 +499,24 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
                   return copy;
                 });
               }
+              if (parsed.source) {
+                sourcesList.push(parsed.source);
+                setMessages(prev => {
+                  const copy = [...prev];
+                  const last = copy[copy.length - 1];
+                  copy[copy.length - 1] = {
+                    ...last,
+                    role: 'assistant',
+                    sources: [...sourcesList],
+                  };
+                  return copy;
+                });
+              }
               if (parsed.content) {
                 assistantMsg += parsed.content;
                 setMessages(prev => {
                   const copy = [...prev];
-                  copy[copy.length - 1] = { role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString(), thinking: thinkingTrace.length ? [...thinkingTrace] : undefined };
+                  copy[copy.length - 1] = { role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString(), thinking: thinkingTrace.length ? [...thinkingTrace] : undefined, sources: sourcesList.length ? [...sourcesList] : undefined };
                   return copy;
                 });
               }
@@ -865,6 +889,55 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
                   })}
                   {streaming && i === messages.length - 1 && msg.role === 'assistant' && (
                     <span className="chat-cursor" />
+                  )}
+                  {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && (
+                    <div className="chat-sources">
+                      {msg.sources.map((src, sIdx) => {
+                        const key = `${i}:${sIdx}`;
+                        const isOpen = openSource === key;
+                        return (
+                          <div key={sIdx} className={`chat-source-card ${isOpen ? 'open' : ''}`}>
+                            <button
+                              className="chat-source-chip"
+                              onClick={() => setOpenSource(isOpen ? null : key)}
+                              title="Click for details"
+                            >
+                              <Database size={11} />
+                              <span>{src.label}</span>
+                              {typeof src.count === 'number' && (
+                                <span className="chat-source-count">{src.count}</span>
+                              )}
+                            </button>
+                            {isOpen && (
+                              <div className="chat-source-details">
+                                {src.query && (
+                                  <div className="chat-source-meta">
+                                    <span className="chat-source-meta-label">Query:</span>
+                                    <code>{src.query}</code>
+                                  </div>
+                                )}
+                                {src.items && src.items.length > 0 && (
+                                  <ul className="chat-source-items">
+                                    {src.items.map((it: any, k: number) => (
+                                      <li key={k}>
+                                        {Object.entries(it)
+                                          .filter(([, v]) => v != null && v !== '')
+                                          .map(([key2, value]) => (
+                                            <div key={key2} className="chat-source-field">
+                                              <span className="chat-source-field-key">{key2}:</span>
+                                              <span className="chat-source-field-val">{String(value)}</span>
+                                            </div>
+                                          ))}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                   {msg.role === 'assistant' && msg.thinking && msg.thinking.length > 0 && (
                     <div className="chat-thinking-section">

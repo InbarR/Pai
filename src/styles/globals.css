@@ -3068,6 +3068,74 @@ label.checkbox input[type="checkbox"] {
 }
 .chat-thinking-list li { margin-bottom: 2px; }
 
+.chat-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.chat-source-card { display: flex; flex-direction: column; flex-basis: 100%; }
+.chat-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  align-self: flex-start;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.chat-source-chip:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent); }
+.chat-source-card.open .chat-source-chip { background: var(--bg-hover); color: var(--text-primary); border-color: var(--accent); }
+.chat-source-count {
+  background: var(--accent);
+  color: white;
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+.chat-source-details {
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.chat-source-meta { margin-bottom: 8px; }
+.chat-source-meta-label { color: var(--text-muted); margin-right: 6px; }
+.chat-source-meta code {
+  background: var(--bg-surface);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+}
+.chat-source-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-source-items li {
+  padding: 6px 8px;
+  background: var(--bg-surface);
+  border-radius: 6px;
+  border-left: 2px solid var(--accent);
+}
+.chat-source-field { display: flex; gap: 6px; line-height: 1.5; }
+.chat-source-field-key { color: var(--text-muted); min-width: 70px; text-transform: capitalize; }
+.chat-source-field-val { color: var(--text-primary); word-break: break-word; flex: 1; }
+
 .slash-popup {
   margin: 0 10px 4px;
   background: var(--bg-elevated);
