@@ -443,6 +443,279 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
 }
 .task-delete-btn:hover { color: #f87171; border-color: #f87171; background: rgba(248, 113, 113, 0.08); }
 
+/* === Task Manager (clean single-column tasks page) === */
+.task-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.task-header {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.task-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.task-page-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+.task-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 6px 10px;
+  width: 220px;
+  color: var(--text-muted);
+}
+.task-search input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  flex: 1;
+}
+.task-search input::placeholder { color: var(--text-muted); }
+
+.task-quick-add {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  color: var(--text-muted);
+  transition: border-color 0.15s;
+}
+.task-quick-add:focus-within { border-color: var(--accent); }
+.task-quick-add-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+}
+.task-quick-add-input::placeholder { color: var(--text-muted); }
+
+.task-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.task-counts strong { color: var(--text-primary); font-weight: 600; }
+.task-toggle {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.task-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
+.task-toggle.on { background: var(--bg-hover); color: var(--text-primary); }
+
+/* Task list */
+.task-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.task-empty {
+  padding: 48px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.task-row {
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.1s;
+}
+.task-row:hover { background: var(--bg-hover); }
+.task-row.expanded { background: var(--bg-surface); }
+
+.task-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  min-height: 44px;
+}
+
+.task-row-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.task-row-check:hover { color: var(--accent); }
+.task-row-check.checked { color: var(--accent); }
+.task-row-check svg { display: block; }
+
+.task-row-title {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-row.done .task-row-title {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.task-row-pin {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.task-row-edit-input {
+  flex: 1;
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text-primary);
+  padding: 4px 8px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+}
+
+.task-row-due {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  flex-shrink: 0;
+}
+.task-row-due.overdue {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.task-row-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s;
+}
+.task-row:hover .task-row-more { opacity: 1; }
+.task-row-more:hover { background: var(--bg-elevated); color: var(--text-primary); }
+
+.task-row-expanded {
+  padding: 0 12px 14px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.task-row-notes {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  min-height: 80px;
+  resize: vertical;
+  outline: none;
+  line-height: 1.5;
+  transition: border-color 0.15s;
+}
+.task-row-notes:focus { border-color: var(--accent); }
+.task-row-notes::placeholder { color: var(--text-muted); }
+.task-row-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Context menu enhancements */
+.task-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.task-context-datepicker {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 200px;
+}
+.task-context-date-quicks {
+  display: flex;
+  gap: 4px;
+}
+.task-context-date-quicks button {
+  flex: 1;
+  font-size: 11px;
+  padding: 6px 8px !important;
+  text-align: center !important;
+  background: var(--bg-elevated);
+  border-radius: 6px;
+  justify-content: center !important;
+}
+.task-context-date-input {
+  width: 100%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
 .companion-back-btn {
   -webkit-app-region: no-drag;
   display: flex;

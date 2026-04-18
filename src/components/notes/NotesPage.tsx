@@ -2,26 +2,28 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { Note } from '../../api/types';
-import NoteEditor from './NoteEditor';
 import {
-  Plus, Search, Pin, Trash2, CheckSquare, Circle, CheckCircle2,
-  Calendar, PlayCircle, X, Upload, Bell, Edit3,
+  Plus, Search, Pin, Trash2, Circle, CheckCircle2,
+  Calendar, MoreHorizontal, X, PinOff, ChevronDown, ChevronRight,
 } from 'lucide-react';
 
-const statusIcons = [Circle, PlayCircle, CheckCircle2];
-const statusLabels = ['To Do', 'In Progress', 'Done'];
-const statusClasses = ['todo', 'in-progress', 'done'];
+type ContextMenuState = {
+  x: number;
+  y: number;
+  id: number;
+  showDatePicker?: boolean;
+};
 
 export default function NotesPage() {
   const qc = useQueryClient();
-  const [activeId, setActiveId] = useState<number | null>(null);
   const [search, setSearch] = useState('');
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
   const [quickAdd, setQuickAdd] = useState('');
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: number } | null>(null);
-  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showDone, setShowDone] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [notesDraft, setNotesDraft] = useState('');
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: allNotes = [] } = useQuery({
@@ -32,83 +34,39 @@ export default function NotesPage() {
     },
   });
 
-  // Show only tasks; optionally include done
-  const tasks = allNotes.filter(n => n.isTask)
-    .filter(n => showDone || n.taskStatus !== 2);
+  const tasks = allNotes
+    .filter(n => n.isTask)
+    .filter(n => showDone || n.taskStatus !== 2)
+    .sort((a, b) => {
+      if (!!b.isPinned !== !!a.isPinned) return b.isPinned ? 1 : -1;
+      const at = a.taskStatus === 2 ? 1 : 0;
+      const bt = b.taskStatus === 2 ? 1 : 0;
+      if (at !== bt) return at - bt;
+      return 0;
+    });
 
-  const active = allNotes.find(n => n.id === activeId);
   const openCount = allNotes.filter(n => n.isTask && n.taskStatus !== 2).length;
   const doneCount = allNotes.filter(n => n.isTask && n.taskStatus === 2).length;
 
-  const selectNote = useCallback((note: Note) => {
-    setActiveId(note.id);
-    setTitle(note.title);
-    setContent(note.content);
-  }, []);
-
-  const autoSave = useCallback((newContent: string) => {
-    setContent(newContent);
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      if (activeId) {
-        api.put(`/notes/${activeId}`, { content: newContent }).then(() =>
-          qc.invalidateQueries({ queryKey: ['notes'] })
-        );
-      }
-    }, 1000);
-  }, [activeId, qc]);
-
-  const autoSaveTitle = useCallback((newTitle: string) => {
-    setTitle(newTitle);
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      if (activeId) {
-        api.put(`/notes/${activeId}`, { title: newTitle }).then(() =>
-          qc.invalidateQueries({ queryKey: ['notes'] })
-        );
-      }
-    }, 600);
-  }, [activeId, qc]);
-
-  // Quick add — always creates a task
   const handleQuickAdd = () => {
     const title = quickAdd.trim() || 'Untitled';
     api.post<Note>('/notes', {
       title,
       notebookId: 1,
       isTask: true,
-    }).then(note => {
+    }).then(() => {
       qc.invalidateQueries({ queryKey: ['notes'] });
       qc.invalidateQueries({ queryKey: ['nav-counts'] });
       setQuickAdd('');
-      selectNote(note);
     });
-  };
-
-  // Import from file
-  const handleImport = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.html,.htm,.txt,.md';
-    input.multiple = true;
-    input.onchange = async () => {
-      if (!input.files) return;
-      for (const file of Array.from(input.files)) {
-        const text = await file.text();
-        const title = file.name.replace(/\.(html?|txt|md)$/i, '');
-        const isHtml = /\.html?$/i.test(file.name);
-        const content = isHtml ? text : `<p>${text.replace(/\n/g, '</p><p>')}</p>`;
-        await api.post('/notes', { title, content, notebookId: 1, isTask: true });
-      }
-      qc.invalidateQueries({ queryKey: ['notes'] });
-      qc.invalidateQueries({ queryKey: ['nav-counts'] });
-    };
-    input.click();
   };
 
   const cycleStatus = useMutation({
     mutationFn: (id: number) => api.post<Note>(`/notes/${id}/toggle-done`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['nav-counts'] });
+    },
   });
 
   const pinMutation = useMutation({
@@ -118,214 +76,300 @@ export default function NotesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.delete(`/notes/${id}`),
-    onSuccess: (_, id) => {
-      if (activeId === id) { setActiveId(null); setContent(''); }
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['notes'] });
       qc.invalidateQueries({ queryKey: ['nav-counts'] });
     },
   });
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 'n') { e.preventDefault(); document.querySelector<HTMLInputElement>('.quick-add-input')?.focus(); }
-      if (e.key === 'Delete' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '')) {
-        if (selected.size > 0) {
-          selected.forEach(id => deleteMutation.mutate(id));
-          setSelected(new Set());
-          setActiveId(null);
-        } else if (activeId) {
-          deleteMutation.mutate(activeId);
-          setActiveId(null);
-        }
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [activeId, selected]);
+  const updateField = (id: number, patch: Partial<Note>) =>
+    api.put(`/notes/${id}`, patch).then(() => {
+      qc.invalidateQueries({ queryKey: ['notes'] });
+      qc.invalidateQueries({ queryKey: ['nav-counts'] });
+    });
 
+  const startEditTitle = (note: Note) => {
+    setEditingId(note.id);
+    setEditingTitle(note.title);
+  };
+
+  const commitTitle = () => {
+    if (editingId !== null) {
+      const trimmed = editingTitle.trim();
+      if (trimmed) updateField(editingId, { title: trimmed });
+      setEditingId(null);
+    }
+  };
+
+  const toggleExpand = (note: Note) => {
+    if (expandedId === note.id) {
+      setExpandedId(null);
+    } else {
+      setExpandedId(note.id);
+      setNotesDraft(note.content?.replace(/<[^>]+>/g, '\n').replace(/\n+/g, '\n').trim() || '');
+    }
+  };
+
+  const saveNotes = useCallback((id: number, text: string) => {
+    setNotesDraft(text);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const html = text.split('\n').map(p => `<p>${p}</p>`).join('');
+      updateField(id, { content: html });
+    }, 600);
+  }, []);
+
+  // Close context menu on outside click
   useEffect(() => {
-    const handler = () => { setContextMenu(null); };
+    const handler = () => setContextMenu(null);
     window.addEventListener('click', handler);
     return () => window.removeEventListener('click', handler);
   }, []);
 
+  // Keyboard
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === 'n') {
+        e.preventDefault();
+        document.querySelector<HTMLInputElement>('.task-quick-add-input')?.focus();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  const activeForMenu = contextMenu ? allNotes.find(n => n.id === contextMenu.id) : null;
+
+  const formatDue = (iso: string) => {
+    const d = new Date(iso);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(d);
+    due.setHours(0, 0, 0, 0);
+    const diff = Math.round((due.getTime() - today.getTime()) / 86_400_000);
+    if (diff === 0) return 'Today';
+    if (diff === 1) return 'Tomorrow';
+    if (diff === -1) return 'Yesterday';
+    if (diff > 0 && diff < 7) return d.toLocaleDateString(undefined, { weekday: 'short' });
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+
   return (
-    <div className="notes-layout notes-layout-simple">
-      {/* Task list */}
-      <div className="todo-list-panel">
-        {/* Quick add */}
-        <div className="todo-quick-add">
+    <div className="task-page">
+      {/* Header: search + quick add */}
+      <div className="task-header">
+        <div className="task-header-row">
+          <h2 className="task-page-title">Tasks</h2>
+          <div className="task-search">
+            <Search size={14} />
+            <input
+              placeholder="Search tasks..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="task-quick-add">
+          <Plus size={16} />
           <input
-            className="quick-add-input"
-            placeholder="Add a task… or press + to create empty"
+            className="task-quick-add-input"
+            placeholder="Add a task and press Enter"
             value={quickAdd}
             onChange={e => setQuickAdd(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') handleQuickAdd(); }}
           />
-          <button className="btn-add" onClick={handleQuickAdd} title={quickAdd.trim() ? 'Add task' : 'Create new empty task'}>
-            <Plus size={16} />
-          </button>
         </div>
 
-        {/* Filter bar */}
-        <div className="todo-tabs">
-          <span className="task-count-label">{openCount} open{doneCount > 0 ? `, ${doneCount} done` : ''}</span>
-          <button className={`todo-tab ${showDone ? 'active' : ''}`} onClick={() => setShowDone(!showDone)}>
+        <div className="task-toolbar">
+          <span className="task-counts">
+            <strong>{openCount}</strong> open · {doneCount} done
+          </span>
+          <button
+            className={`task-toggle ${showDone ? 'on' : ''}`}
+            onClick={() => setShowDone(!showDone)}
+          >
             {showDone ? 'Hide done' : 'Show done'}
           </button>
-          <div style={{ marginLeft: 'auto' }}>
-            <div className="notes-search" style={{ width: 160 }}>
-              <Search size={12} className="notes-search-icon" />
-              <input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} style={{ fontSize: 12, padding: '4px 4px 4px 26px' }} />
-            </div>
-          </div>
         </div>
+      </div>
 
-        {/* Task list */}
-        <div className="todo-list-scroll">
-          {tasks.map(note => {
-            const StatusIcon = statusIcons[note.taskStatus];
-            const isActive = activeId === note.id;
-            return (
-              <div
-                key={note.id}
-                className={`todo-item ${isActive ? 'active' : ''} ${selected.has(note.id) ? 'selected' : ''} ${note.taskStatus === 2 ? 'done' : ''}`}
-                onClick={e => {
-                  if (e.ctrlKey || e.metaKey) {
-                    setSelected(prev => { const n = new Set(prev); n.has(note.id) ? n.delete(note.id) : n.add(note.id); return n; });
-                  } else {
-                    setSelected(new Set());
-                    selectNote(note);
-                  }
-                }}
-                onContextMenu={e => {
-                  e.preventDefault();
-                  if (selected.size === 0) setSelected(new Set([note.id]));
-                  setContextMenu({ x: e.clientX, y: e.clientY, id: note.id });
-                }}
-              >
+      {/* Task list */}
+      <div className="task-list">
+        {tasks.length === 0 && (
+          <div className="task-empty">
+            {search ? 'No matching tasks.' : 'No tasks yet. Add one above to get started.'}
+          </div>
+        )}
+        {tasks.map(note => {
+          const isDone = note.taskStatus === 2;
+          const isExpanded = expandedId === note.id;
+          const isEditing = editingId === note.id;
+          return (
+            <div
+              key={note.id}
+              className={`task-row ${isDone ? 'done' : ''} ${isExpanded ? 'expanded' : ''}`}
+              onContextMenu={e => {
+                e.preventDefault();
+                setContextMenu({ x: e.clientX, y: e.clientY, id: note.id });
+              }}
+            >
+              <div className="task-row-main">
                 <button
-                  className={`todo-status ${statusClasses[note.taskStatus]}`}
-                  onClick={e => { e.stopPropagation(); cycleStatus.mutate(note.id); }}
-                  title={statusLabels[note.taskStatus]}
+                  className={`task-row-check ${isDone ? 'checked' : ''}`}
+                  onClick={() => cycleStatus.mutate(note.id)}
+                  title={isDone ? 'Mark as open' : 'Mark as done'}
                 >
-                  <StatusIcon size={18} />
+                  {isDone ? <CheckCircle2 size={20} /> : <Circle size={20} />}
                 </button>
-                <div className="todo-content">
-                  <div className="todo-title">{note.title || 'Untitled'}</div>
-                  <div className="todo-meta">
-                    {note.dueDate && <span className="todo-due"><Calendar size={10} /> {new Date(note.dueDate).toLocaleDateString()}</span>}
-                    {note.isPinned ? <Pin size={10} /> : null}
+
+                {isEditing ? (
+                  <input
+                    autoFocus
+                    className="task-row-edit-input"
+                    value={editingTitle}
+                    onChange={e => setEditingTitle(e.target.value)}
+                    onBlur={commitTitle}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') commitTitle();
+                      if (e.key === 'Escape') setEditingId(null);
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="task-row-title"
+                    onClick={() => toggleExpand(note)}
+                    onDoubleClick={() => startEditTitle(note)}
+                    title="Click to expand · Double-click to rename"
+                  >
+                    {note.isPinned && <Pin size={11} className="task-row-pin" />}
+                    {note.title || 'Untitled'}
+                  </div>
+                )}
+
+                {note.dueDate && (
+                  <span className={`task-row-due ${new Date(note.dueDate) < new Date(new Date().setHours(0, 0, 0, 0)) ? 'overdue' : ''}`}>
+                    <Calendar size={11} /> {formatDue(note.dueDate)}
+                  </span>
+                )}
+
+                <button
+                  className="task-row-more"
+                  onClick={e => {
+                    e.stopPropagation();
+                    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setContextMenu({ x: rect.left, y: rect.bottom + 4, id: note.id });
+                  }}
+                  title="More actions"
+                >
+                  <MoreHorizontal size={16} />
+                </button>
+              </div>
+
+              {isExpanded && (
+                <div className="task-row-expanded">
+                  <textarea
+                    className="task-row-notes"
+                    placeholder="Add notes…"
+                    value={notesDraft}
+                    onChange={e => saveNotes(note.id, e.target.value)}
+                  />
+                  <div className="task-row-meta">
+                    {note.createdAt && <span>Created {new Date(note.createdAt).toLocaleDateString()}</span>}
                   </div>
                 </div>
-              </div>
-            );
-          })}
-          {tasks.length === 0 && <div className="empty-inline">
-            {search ? 'No matches' : 'No tasks yet. Add one above!'}
-          </div>}
-        </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Context menu */}
-      {contextMenu && (
-        <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }} onClick={e => e.stopPropagation()}>
-          {selected.size > 1 ? (
+      {contextMenu && activeForMenu && (
+        <div
+          className="context-menu task-context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={e => e.stopPropagation()}
+        >
+          {!contextMenu.showDatePicker ? (
             <>
-              <div style={{ padding: '4px 12px', fontSize: 11, color: 'var(--text-muted)' }}>{selected.size} selected</div>
-              <button className="danger-item" onClick={() => {
-                selected.forEach(id => deleteMutation.mutate(id));
-                setSelected(new Set()); setContextMenu(null); setActiveId(null);
-              }}>Delete {selected.size} items</button>
-            </>
-          ) : (() => {
-            const note = allNotes.find(n => n.id === contextMenu.id);
-            return (<>
-              {!!note?.isTask && note.taskStatus === 2 && (
-                <button onClick={() => {
-                  api.put(`/notes/${contextMenu.id}`, { taskStatus: 0 }).then(() => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); });
-                  setContextMenu(null); setSelected(new Set());
-                }}>Reopen task</button>
-              )}
-              <button onClick={() => { pinMutation.mutate(contextMenu.id); setContextMenu(null); setSelected(new Set()); }}>
-                {note?.isPinned ? 'Unpin' : 'Pin to top'}
+              <button onClick={() => {
+                cycleStatus.mutate(activeForMenu.id);
+                setContextMenu(null);
+              }}>
+                {activeForMenu.taskStatus === 2 ? <Circle size={14} /> : <CheckCircle2 size={14} />}
+                {activeForMenu.taskStatus === 2 ? 'Mark as open' : 'Mark as done'}
+              </button>
+              <button onClick={() => {
+                const note = allNotes.find(n => n.id === contextMenu.id);
+                if (note) startEditTitle(note);
+                setContextMenu(null);
+              }}>
+                <span style={{ width: 14, display: 'inline-block', textAlign: 'center' }}>✎</span>
+                Rename
               </button>
               <hr />
-              <button className="danger-item" onClick={() => { deleteMutation.mutate(contextMenu.id); setContextMenu(null); setSelected(new Set()); }}>Delete</button>
-            </>);
-          })()}
+              <button onClick={() => setContextMenu({ ...contextMenu, showDatePicker: true })}>
+                <Calendar size={14} />
+                {activeForMenu.dueDate ? `Due ${formatDue(activeForMenu.dueDate)}` : 'Set due date…'}
+              </button>
+              {activeForMenu.dueDate && (
+                <button onClick={() => {
+                  updateField(activeForMenu.id, { dueDate: null });
+                  setContextMenu(null);
+                }}>
+                  <X size={14} /> Clear due date
+                </button>
+              )}
+              <button onClick={() => {
+                pinMutation.mutate(activeForMenu.id);
+                setContextMenu(null);
+              }}>
+                {activeForMenu.isPinned ? <PinOff size={14} /> : <Pin size={14} />}
+                {activeForMenu.isPinned ? 'Unpin' : 'Pin to top'}
+              </button>
+              <hr />
+              <button className="danger-item" onClick={() => {
+                if (confirm(`Delete "${activeForMenu.title || 'Untitled'}"?`)) {
+                  deleteMutation.mutate(activeForMenu.id);
+                }
+                setContextMenu(null);
+              }}>
+                <Trash2 size={14} /> Delete
+              </button>
+            </>
+          ) : (
+            <div className="task-context-datepicker">
+              <div className="task-context-date-quicks">
+                <button onClick={() => {
+                  const today = new Date().toISOString().split('T')[0];
+                  updateField(activeForMenu.id, { dueDate: today });
+                  setContextMenu(null);
+                }}>Today</button>
+                <button onClick={() => {
+                  const t = new Date(); t.setDate(t.getDate() + 1);
+                  updateField(activeForMenu.id, { dueDate: t.toISOString().split('T')[0] });
+                  setContextMenu(null);
+                }}>Tomorrow</button>
+                <button onClick={() => {
+                  const t = new Date(); t.setDate(t.getDate() + 7);
+                  updateField(activeForMenu.id, { dueDate: t.toISOString().split('T')[0] });
+                  setContextMenu(null);
+                }}>Next week</button>
+              </div>
+              <input
+                type="date"
+                className="task-context-date-input"
+                value={activeForMenu.dueDate || ''}
+                onChange={e => {
+                  updateField(activeForMenu.id, { dueDate: e.target.value || null });
+                  setContextMenu(null);
+                }}
+              />
+            </div>
+          )}
         </div>
       )}
-
-      {/* Detail pane */}
-      <div className={`todo-detail-panel${active ? '' : ' hidden'}`}>
-        {active ? (
-          <>
-            <div className="task-detail">
-              <div className="task-detail-row">
-                <button
-                  className={`task-checkbox ${active.taskStatus === 2 ? 'checked' : ''}`}
-                  onClick={() => cycleStatus.mutate(active.id)}
-                  title={active.taskStatus === 2 ? 'Mark as open' : 'Mark as done'}
-                >
-                  {active.taskStatus === 2 ? <CheckCircle2 size={20} /> : <Circle size={20} />}
-                </button>
-                <input
-                  className="task-title-input"
-                  value={title}
-                  onChange={e => autoSaveTitle(e.target.value)}
-                  placeholder="Task title"
-                />
-                <button className="ghost" onClick={() => setActiveId(null)} title="Close"><X size={16} /></button>
-              </div>
-
-              <div className="task-meta-grid">
-                <label className="task-meta-field">
-                  <span className="task-meta-label">Due date</span>
-                  <input
-                    type="date"
-                    className="task-date-input"
-                    value={active.dueDate || ''}
-                    onChange={e => { api.put(`/notes/${active.id}`, { dueDate: e.target.value || null }).then(() => qc.invalidateQueries({ queryKey: ['notes'] })); }}
-                  />
-                </label>
-                <label className="task-meta-field">
-                  <span className="task-meta-label">Status</span>
-                  <select
-                    className="task-status-select"
-                    value={active.taskStatus}
-                    onChange={e => { api.put(`/notes/${active.id}`, { taskStatus: parseInt(e.target.value) }).then(() => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); }); }}
-                  >
-                    <option value={0}>To Do</option>
-                    <option value={1}>In Progress</option>
-                    <option value={2}>Done</option>
-                  </select>
-                </label>
-              </div>
-
-              <label className="task-meta-label" style={{ marginTop: 16 }}>Notes</label>
-              <textarea
-                className="task-notes-input"
-                placeholder="Add notes…"
-                value={content.replace(/<[^>]+>/g, '\n').replace(/\n+/g, '\n').trim()}
-                onChange={e => autoSave(e.target.value.split('\n').map(p => `<p>${p}</p>`).join(''))}
-              />
-
-              <div className="task-meta-footer">
-                {active.createdAt && <span>Created {new Date(active.createdAt).toLocaleDateString()} {new Date(active.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
-                <button
-                  className="task-delete-btn"
-                  onClick={() => { if (confirm('Delete this task?')) deleteMutation.mutate(active.id); }}
-                >
-                  <Trash2 size={14} /> Delete task
-                </button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <div className="note-editor-empty">Select a task to see details</div>
-        )}
-      </div>
     </div>
   );
 }
