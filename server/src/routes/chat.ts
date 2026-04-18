@@ -652,10 +652,15 @@ router.post('/stream', async (req: Request, res: Response) => {
       return;
     }
 
-    // Direct handler for "who is X" — bypass AI, search AD + emails directly
-    const whoMatch = lastUserText.match(/^(?:who is|find|look up|מי (?:זה|היא))\s+(.+)/i);
+    // Direct handler for "who is X" — bypass AI, search AD + emails directly.
+    // "find" is intentionally excluded; it's too ambiguous (find mail/note/task/etc).
+    const whoMatch = lastUserText.match(/^(?:who is|look up|מי (?:זה|היא))\s+(.+)/i);
     if (whoMatch) {
       const personName = whoMatch[1].trim();
+      // Skip if it's clearly not a person (mentions a noun like mail/email/note/task/file/meeting)
+      if (/\b(mail|email|note|task|todo|file|doc|document|meeting|calendar|event|message|attachment|chat)\b/i.test(personName)) {
+        // fall through to AI
+      } else {
       sendStatus(`Looking up "${personName}"`);
       try {
         const { searchPeople } = await import('../services/people');
@@ -740,6 +745,7 @@ router.post('/stream', async (req: Request, res: Response) => {
         // Fall through to normal AI if direct lookup fails
         console.log('[Chat] Direct people lookup failed:', err.message);
       }
+      } // end else (not noun-like)
     }
 
     // Build full context only for non-draft modes
