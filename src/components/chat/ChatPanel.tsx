@@ -1095,11 +1095,12 @@ function renderMarkdownLine(line: string): React.ReactNode {
 
   while (remaining.length > 0) {
     const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+    const italicMatch = remaining.match(/(?<![*\w])\*([^*\n]+?)\*(?!\*)/);
     const codeMatch = remaining.match(/`(.+?)`/);
     const linkMatch = remaining.match(/\[([^\]]+)\]\(([^)]+)\)/);
     const urlMatch = remaining.match(/(?<!\()(https?:\/\/[^\s<>"')\]]+)/);
 
-    const matches = [boldMatch, codeMatch, linkMatch, urlMatch].filter(Boolean).sort((a, b) => a!.index! - b!.index!);
+    const matches = [boldMatch, italicMatch, codeMatch, linkMatch, urlMatch].filter(Boolean).sort((a, b) => a!.index! - b!.index!);
 
     if (matches.length === 0) {
       parts.push(remaining);
@@ -1113,6 +1114,8 @@ function renderMarkdownLine(line: string): React.ReactNode {
 
     if (match[0].startsWith('**')) {
       parts.push(<strong key={key++}>{match[1]}</strong>);
+    } else if (match[0].startsWith('*')) {
+      parts.push(<em key={key++}>{match[1]}</em>);
     } else if (match[0].startsWith('`')) {
       parts.push(<code key={key++} className="inline-code">{match[1]}</code>);
     } else if (match[0].startsWith('[')) {
