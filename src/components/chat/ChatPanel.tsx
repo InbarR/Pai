@@ -2,13 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
-import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square, Copy, X, Mic, MicOff, Maximize2, Menu } from 'lucide-react';
+import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square, Copy, X, Mic, MicOff, Maximize2, Menu, Brain } from 'lucide-react';
 import BrianMascot from './BrianMascot';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: string;
+  thinking?: string[];
 }
 
 interface ChatSession {
@@ -93,6 +94,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
   const panelRef = useRef<HTMLDivElement>(null);
   const [voiceActive, setVoiceActive] = useState(false);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [openThinking, setOpenThinking] = useState<Set<number>>(new Set());
   const recognitionRef = useRef<any>(null);
 
   const startVoice = () => {
@@ -462,6 +464,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
 
       const decoder = new TextDecoder();
       let assistantMsg = '';
+      const thinkingTrace: string[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -477,7 +480,8 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
             try {
               const parsed = JSON.parse(data);
               if (parsed.status) {
-                // Show status as thinking indicator
+                // Capture status into thinking trace + show as live indicator
+                if (!thinkingTrace.includes(parsed.status)) thinkingTrace.push(parsed.status);
                 setMessages(prev => {
                   const copy = [...prev];
                   copy[copy.length - 1] = { role: 'assistant', content: `:::status:::${parsed.status}`, timestamp: new Date().toISOString() };
@@ -488,7 +492,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
                 assistantMsg += parsed.content;
                 setMessages(prev => {
                   const copy = [...prev];
-                  copy[copy.length - 1] = { role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString() };
+                  copy[copy.length - 1] = { role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString(), thinking: thinkingTrace.length ? [...thinkingTrace] : undefined };
                   return copy;
                 });
               }
@@ -509,7 +513,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
                 assistantMsg = parsed.replace;
                 setMessages(prev => {
                   const copy = [...prev];
-                  copy[copy.length - 1] = { role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString() };
+                  copy[copy.length - 1] = { role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString(), thinking: thinkingTrace.length ? [...thinkingTrace] : undefined };
                   return copy;
                 });
               }
@@ -861,6 +865,30 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
                   })}
                   {streaming && i === messages.length - 1 && msg.role === 'assistant' && (
                     <span className="chat-cursor" />
+                  )}
+                  {msg.role === 'assistant' && msg.thinking && msg.thinking.length > 0 && (
+                    <div className="chat-thinking-section">
+                      <button
+                        className="chat-thinking-toggle"
+                        onClick={() => setOpenThinking(prev => {
+                          const next = new Set(prev);
+                          if (next.has(i)) next.delete(i); else next.add(i);
+                          return next;
+                        })}
+                      >
+                        <Brain size={12} />
+                        {openThinking.has(i)
+                          ? `Hide thinking (${msg.thinking.length})`
+                          : `Show thinking (${msg.thinking.length})`}
+                      </button>
+                      {openThinking.has(i) && (
+                        <ol className="chat-thinking-list">
+                          {msg.thinking.map((step, k) => (
+                            <li key={k}>{step}</li>
+                          ))}
+                        </ol>
+                      )}
+                    </div>
                   )}
                 </div>
                 <button className="chat-copy-btn" title="Copy" onClick={() => {

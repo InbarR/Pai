@@ -676,6 +676,25 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
 }
 .task-row-notes:focus { border-color: var(--accent); }
 .task-row-notes::placeholder { color: var(--text-muted); }
+.task-row-notes-view {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  min-height: 40px;
+  cursor: text;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  transition: border-color 0.15s, background 0.15s;
+}
+.task-row-notes-view:hover { border-color: var(--border-subtle); background: rgba(255,255,255,0.02); }
+.task-row-notes-view a { color: var(--accent); text-decoration: underline; word-break: break-all; }
+.task-row-notes-view a:hover { opacity: 0.8; }
+.task-notes-line { min-height: 1em; }
+.task-notes-placeholder { color: var(--text-muted); font-style: italic; }
 .task-row-meta {
   font-size: 11px;
   color: var(--text-muted);
@@ -3019,6 +3038,35 @@ label.checkbox input[type="checkbox"] {
 
 @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.chat-thinking-section {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-subtle);
+}
+.chat-thinking-toggle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 2px 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+.chat-thinking-toggle:hover { color: var(--text-primary); background: var(--bg-elevated); }
+.chat-thinking-list {
+  margin: 6px 0 0;
+  padding-left: 22px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  list-style: decimal;
+}
+.chat-thinking-list li { margin-bottom: 2px; }
 
 .slash-popup {
   margin: 0 10px 4px;

@@ -23,6 +23,7 @@ export default function NotesPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [editingNotesId, setEditingNotesId] = useState<number | null>(null);
   const [notesDraft, setNotesDraft] = useState('');
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -272,12 +273,30 @@ export default function NotesPage() {
 
               {isExpanded && (
                 <div className="task-row-expanded">
-                  <textarea
-                    className="task-row-notes"
-                    placeholder="Add notes…"
-                    value={notesDraft}
-                    onChange={e => saveNotes(note.id, e.target.value)}
-                  />
+                  {editingNotesId === note.id ? (
+                    <textarea
+                      autoFocus
+                      className="task-row-notes"
+                      placeholder="Add notes…"
+                      value={notesDraft}
+                      onChange={e => saveNotes(note.id, e.target.value)}
+                      onBlur={() => setEditingNotesId(null)}
+                    />
+                  ) : (
+                    <div
+                      className="task-row-notes-view"
+                      onClick={() => setEditingNotesId(note.id)}
+                      title="Click to edit"
+                    >
+                      {notesDraft.trim() ? (
+                        notesDraft.split('\n').map((line, i) => (
+                          <div key={i} className="task-notes-line">{renderLineWithLinks(line)}</div>
+                        ))
+                      ) : (
+                        <span className="task-notes-placeholder">Add notes…</span>
+                      )}
+                    </div>
+                  )}
                   <div className="task-row-meta">
                     {note.createdAt && <span>Created {new Date(note.createdAt).toLocaleDateString()}</span>}
                   </div>
@@ -376,4 +395,31 @@ export default function NotesPage() {
       )}
     </div>
   );
+}
+
+function renderLineWithLinks(text: string) {
+  if (!text) return '\u00A0';
+  const urlRegex = /(https?:\/\/[^\s<>"')\]]+)/g;
+  const parts: (string | JSX.Element)[] = [];
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = urlRegex.exec(text)) !== null) {
+    if (match.index > lastIdx) parts.push(text.slice(lastIdx, match.index));
+    const url = match[1];
+    parts.push(
+      <a
+        key={key++}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={e => e.stopPropagation()}
+      >
+        {url}
+      </a>
+    );
+    lastIdx = match.index + url.length;
+  }
+  if (lastIdx < text.length) parts.push(text.slice(lastIdx));
+  return parts.length ? parts : text;
 }
