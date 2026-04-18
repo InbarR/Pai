@@ -296,7 +296,21 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 24px 20px;
+  padding: 16px;
+}
+
+/* Reset full-page negative margins inside narrow companion view */
+.companion-page .notes-layout,
+.companion-page .notes-layout-simple {
+  margin: 0;
+  height: auto;
+  min-height: calc(100vh - 100px);
+}
+
+.companion-page .todo-list-panel {
+  min-width: 0;
+  max-width: none;
+  border-right: none;
 }
 
 .companion-back-btn {
@@ -861,6 +875,7 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   transition: background 0.15s, transform 0.1s;
   flex-shrink: 0;
 }
+.todo-quick-add .btn-add svg { stroke: white; display: block; }
 .todo-quick-add .btn-add:hover {
   background: var(--accent-hover, #5855eb);
   transform: scale(1.05);
