@@ -63,24 +63,26 @@ export default function Layout({ children }: { children: ReactNode }) {
         e.preventDefault();
         cycleMode();
       }
-      // Esc — sidecar→hide only (full mode stays)
+      // Esc — close drawer if open; do NOT hide window (avoid accidental closing)
       if (e.key === 'Escape' && !['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName || '')) {
-        if (modeRef.current !== 'full') try { (window as any).brian?.hide?.(); } catch {}
+        if (drawerOpen) {
+          e.preventDefault();
+          setDrawerOpen(false);
+        }
       }
-      // Alt+1..6 — navigate to sections (goes to full mode)
+      // Alt+1..6 — navigate to sections
       if (e.altKey && !e.ctrlKey && !e.shiftKey) {
         const routes = ['/', '/notes', '/files', '/people', '/emails'];
         const num = parseInt(e.key);
         if (num >= 1 && num <= routes.length) {
           e.preventDefault();
           navigate(routes[num - 1]);
-          if (modeRef.current === 'sidecar') goFull();
         }
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [navigate]);
+  }, [navigate, drawerOpen]);
 
   // Force sidecar from Electron (Ctrl+2)
   useEffect(() => {
