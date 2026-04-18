@@ -215,7 +215,7 @@ export default function PeoplePage() {
         </button>
         {search.length >= 2 && (
           <button className={`email-filter ${tab === 'search' ? 'active' : ''}`} onClick={() => setTab('search')}>
-            Results ({searchResults.length})
+            Results {loadingSearch ? '…' : `(${searchResults.length})`}
           </button>
         )}
       </div>
