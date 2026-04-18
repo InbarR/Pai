@@ -653,15 +653,21 @@ router.post('/stream', async (req: Request, res: Response) => {
     const whoMatch = lastUserText.match(/^(?:who is|find|look up|מי (?:זה|היא))\s+(.+)/i);
     if (whoMatch) {
       const personName = whoMatch[1].trim();
-      sendStatus(`Looking up ${personName}...`);
+      sendStatus(`Looking up "${personName}"`);
       try {
         const { searchPeople } = await import('../services/people');
+        sendStatus('Searching organization directory (Microsoft Graph /people)...');
         const adResults = await searchPeople(personName);
+        sendStatus(`Found ${adResults.length} match${adResults.length === 1 ? '' : 'es'} in directory${adResults.length > 0 ? `: ${adResults.slice(0, 3).map(r => r.name).join(', ')}${adResults.length > 3 ? '...' : ''}` : ''}`);
+        sendStatus(`Searching local email index for "${personName}"...`);
         const emailResults = await executeAction({ type: 'search_emails', query: personName });
+        const emailCount = emailResults.data?.length || 0;
+        sendStatus(`Found ${emailCount} matching email${emailCount === 1 ? '' : 's'}`);
 
         let reply = '';
         if (adResults.length > 0) {
           const p = adResults[0];
+          sendStatus(`Building profile from directory entry for ${p.name}`);
           reply += `**${p.name}**\n`;
           if (p.title) reply += `${p.title}\n`;
           if (p.department) reply += `${p.department}\n`;
@@ -685,6 +691,11 @@ router.post('/stream', async (req: Request, res: Response) => {
             reply += `- **${e.subject}** from ${e.from || e.fromName} (${e.date})\n`;
           }
         }
+
+        const sources: string[] = [];
+        if (adResults.length > 0) sources.push(`Microsoft Graph /people (${adResults.length} hit${adResults.length === 1 ? '' : 's'})`);
+        if (emailCount > 0) sources.push(`Local email index (${emailCount} match${emailCount === 1 ? '' : 'es'})`);
+        if (sources.length) reply += `\n\n_Sources: ${sources.join(' · ')}_`;
 
         const words = reply.split(' ');
         for (let i = 0; i < words.length; i++) {
