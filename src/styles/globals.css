@@ -640,14 +640,17 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   justify-content: center;
   width: 28px;
   height: 28px;
+  padding: 0;
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.55;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
+.task-row-more svg { stroke: currentColor; display: block; }
 .task-row:hover .task-row-more { opacity: 1; }
 .task-row-more:hover { background: var(--bg-elevated); color: var(--text-primary); }
 
