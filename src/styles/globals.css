@@ -313,6 +313,136 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   border-right: none;
 }
 
+/* Task detail (tasks-manager style, not OneNote) */
+.task-detail {
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.task-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.task-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.task-checkbox:hover { color: var(--accent); background: var(--bg-hover); }
+.task-checkbox.checked { color: var(--accent); }
+.task-checkbox svg { display: block; }
+
+.task-title-input {
+  flex: 1;
+  font-size: 22px;
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  outline: none;
+  font-family: inherit;
+  padding: 4px 0;
+}
+.task-title-input::placeholder { color: var(--text-muted); font-weight: 400; }
+
+.task-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.task-meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-meta-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.task-date-input,
+.task-status-select {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.task-date-input:focus,
+.task-status-select:focus { border-color: var(--accent); }
+
+.task-notes-input {
+  flex: 1;
+  min-height: 160px;
+  margin-top: 8px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 12px 14px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  outline: none;
+  line-height: 1.5;
+  transition: border-color 0.15s;
+}
+.task-notes-input:focus { border-color: var(--accent); }
+.task-notes-input::placeholder { color: var(--text-muted); }
+
+.task-meta-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.task-delete-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.task-delete-btn:hover { color: #f87171; border-color: #f87171; background: rgba(248, 113, 113, 0.08); }
+
 .companion-back-btn {
   -webkit-app-region: no-drag;
   display: flex;

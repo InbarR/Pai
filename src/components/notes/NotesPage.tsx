@@ -261,29 +261,66 @@ export default function NotesPage() {
       <div className={`todo-detail-panel${active ? '' : ' hidden'}`}>
         {active ? (
           <>
-            <div className="todo-detail-header">
-              <div className="flex items-center gap-2" style={{ marginBottom: 8 }}>
-                <button className={`note-status-btn ${statusClasses[active.taskStatus]}`}
+            <div className="task-detail">
+              <div className="task-detail-row">
+                <button
+                  className={`task-checkbox ${active.taskStatus === 2 ? 'checked' : ''}`}
                   onClick={() => cycleStatus.mutate(active.id)}
-                  title={active.taskStatus === 2 ? 'Mark as To Do' : 'Mark as Done'}>
-                  {statusLabels[active.taskStatus]}
+                  title={active.taskStatus === 2 ? 'Mark as open' : 'Mark as done'}
+                >
+                  {active.taskStatus === 2 ? <CheckCircle2 size={20} /> : <Circle size={20} />}
                 </button>
-                <div className="note-due-picker">
-                  <Calendar size={12} />
-                  <input type="date" value={active.dueDate || ''}
-                    onChange={e => { api.put(`/notes/${active.id}`, { dueDate: e.target.value || null }).then(() => qc.invalidateQueries({ queryKey: ['notes'] })); }} />
-                </div>
-                <button className="ghost" onClick={() => setActiveId(null)} style={{ marginLeft: 'auto' }}><X size={16} /></button>
+                <input
+                  className="task-title-input"
+                  value={title}
+                  onChange={e => autoSaveTitle(e.target.value)}
+                  placeholder="Task title"
+                />
+                <button className="ghost" onClick={() => setActiveId(null)} title="Close"><X size={16} /></button>
               </div>
-              <input className="note-title-input" value={title} onChange={e => autoSaveTitle(e.target.value)} placeholder="Untitled" />
+
+              <div className="task-meta-grid">
+                <label className="task-meta-field">
+                  <span className="task-meta-label">Due date</span>
+                  <input
+                    type="date"
+                    className="task-date-input"
+                    value={active.dueDate || ''}
+                    onChange={e => { api.put(`/notes/${active.id}`, { dueDate: e.target.value || null }).then(() => qc.invalidateQueries({ queryKey: ['notes'] })); }}
+                  />
+                </label>
+                <label className="task-meta-field">
+                  <span className="task-meta-label">Status</span>
+                  <select
+                    className="task-status-select"
+                    value={active.taskStatus}
+                    onChange={e => { api.put(`/notes/${active.id}`, { taskStatus: parseInt(e.target.value) }).then(() => { qc.invalidateQueries({ queryKey: ['notes'] }); qc.invalidateQueries({ queryKey: ['nav-counts'] }); }); }}
+                  >
+                    <option value={0}>To Do</option>
+                    <option value={1}>In Progress</option>
+                    <option value={2}>Done</option>
+                  </select>
+                </label>
+              </div>
+
+              <label className="task-meta-label" style={{ marginTop: 16 }}>Notes</label>
+              <textarea
+                className="task-notes-input"
+                placeholder="Add notes…"
+                value={content.replace(/<[^>]+>/g, '\n').replace(/\n+/g, '\n').trim()}
+                onChange={e => autoSave(e.target.value.split('\n').map(p => `<p>${p}</p>`).join(''))}
+              />
+
+              <div className="task-meta-footer">
+                {active.createdAt && <span>Created {new Date(active.createdAt).toLocaleDateString()} {new Date(active.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+                <button
+                  className="task-delete-btn"
+                  onClick={() => { if (confirm('Delete this task?')) deleteMutation.mutate(active.id); }}
+                >
+                  <Trash2 size={14} /> Delete task
+                </button>
+              </div>
             </div>
-            <div className="note-meta-bar">
-              {active.createdAt && <span>Created {new Date(active.createdAt).toLocaleDateString()} {new Date(active.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
-              {active.updatedAt && active.updatedAt !== active.createdAt && (
-                <span>Modified {new Date(active.updatedAt).toLocaleDateString()} {new Date(active.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-              )}
-            </div>
-            <NoteEditor content={content} onChange={autoSave} />
           </>
         ) : (
           <div className="note-editor-empty">Select a task to see details</div>
