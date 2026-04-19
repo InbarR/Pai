@@ -827,27 +827,28 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
             </div>
           )}
         </div>
-        {previewSessionId && (
-          <div className="chat-history-preview">
-            <div className="chat-history-preview-header">
-              <span>Preview</span>
-              <button className="ghost" onClick={() => loadSession(previewSessionId)} title="Open this chat">Open →</button>
-            </div>
-            <div className="chat-history-preview-body">
-              {!previewData && <div className="text-xs text-muted">Loading…</div>}
-              {previewData && previewData.messages.slice(0, 6).map((m, i) => (
-                <div key={i} className={`chat-history-preview-msg ${m.role}`}>
-                  <div className="chat-history-preview-role">{m.role}</div>
-                  <div className="chat-history-preview-content">{(m.content || '').slice(0, 200)}{(m.content || '').length > 200 ? '…' : ''}</div>
-                </div>
-              ))}
-              {previewData && previewData.messages.length === 0 && (
-                <div className="text-xs text-muted">Empty chat</div>
-              )}
-            </div>
-          </div>
-        )}
+        </div>
       </div>
+      {showHistory && previewSessionId && (
+        <div className="chat-history-preview">
+          <div className="chat-history-preview-header">
+            <span>Preview</span>
+            <button className="ghost" onClick={() => loadSession(previewSessionId)} title="Open this chat">Open →</button>
+          </div>
+          <div className="chat-history-preview-body">
+            {!previewData && <div className="text-xs text-muted">Loading…</div>}
+            {previewData && previewData.messages.slice(0, 6).map((m, i) => (
+              <div key={i} className={`chat-history-preview-msg ${m.role}`}>
+                <div className="chat-history-preview-role">{m.role}</div>
+                <div className="chat-history-preview-content">{(m.content || '').slice(0, 200)}{(m.content || '').length > 200 ? '…' : ''}</div>
+              </div>
+            ))}
+            {previewData && previewData.messages.length === 0 && (
+              <div className="text-xs text-muted">Empty chat</div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Mini toolbar */}
       <div className="chat-toolbar">
