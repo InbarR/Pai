@@ -827,7 +827,6 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
             </div>
           )}
         </div>
-        </div>
       </div>
       {showHistory && previewSessionId && (
         <div className="chat-history-preview">
