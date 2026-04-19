@@ -68,6 +68,8 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
   const [showHistory, setShowHistory] = useState(false);
   const [historyFilter, setHistoryFilter] = useState('');
   const [historyIdx, setHistoryIdx] = useState(-1);
+  const [previewSessionId, setPreviewSessionId] = useState<number | null>(null);
+  const [selectedSessions, setSelectedSessions] = useState<Set<number>>(new Set());
   const historyInputRef = useRef<HTMLInputElement>(null);
   const [model, setModelState] = useState(() => localStorage.getItem('brian-model') || 'gpt-4o');
   const setModel = (m: string) => { setModelState(m); localStorage.setItem('brian-model', m); };
@@ -346,6 +348,25 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
       refetchSessions();
     },
   });
+
+  // Preview the first/last messages of a hovered/selected session
+  const { data: previewData } = useQuery({
+    queryKey: ['chat-session-preview', previewSessionId],
+    queryFn: () => api.get<{ messages: Message[] }>(`/chat/sessions/${previewSessionId}`),
+    enabled: !!previewSessionId,
+    staleTime: 60_000,
+  });
+
+  async function bulkDelete() {
+    if (selectedSessions.size === 0) return;
+    if (!confirm(`Delete ${selectedSessions.size} chat${selectedSessions.size === 1 ? '' : 's'}?`)) return;
+    const ids = [...selectedSessions];
+    await Promise.all(ids.map(id => api.delete(`/chat/sessions/${id}`).catch(() => null)));
+    if (ids.includes(sessionId!)) newSession();
+    setSelectedSessions(new Set());
+    setPreviewSessionId(null);
+    refetchSessions();
+  }
 
   const loginMutation = useMutation({
     mutationFn: async () => {
@@ -704,7 +725,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
       <div className={`chat-history-panel ${showHistory ? 'open' : ''}`}>
         <div className="chat-history-header">
           <span style={{ fontWeight: 600, fontSize: 13 }}>Chat History</span>
-          <button className="ghost" onClick={() => { setShowHistory(false); setHistoryFilter(''); }}>
+          <button className="ghost" onClick={() => { setShowHistory(false); setHistoryFilter(''); setSelectedSessions(new Set()); setPreviewSessionId(null); }}>
             <X size={14} />
           </button>
         </div>
@@ -725,33 +746,107 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
               } else if (e.key === 'Enter' && historyIdx >= 0 && historyFiltered[historyIdx]) {
                 e.preventDefault();
                 loadSession(historyFiltered[historyIdx].id);
+              } else if (e.key === 'Delete' && selectedSessions.size > 0) {
+                e.preventDefault();
+                bulkDelete();
               } else if (e.key === 'Escape') {
                 e.preventDefault();
                 setShowHistory(false);
                 setHistoryFilter('');
                 setHistoryIdx(-1);
+                setSelectedSessions(new Set());
+                setPreviewSessionId(null);
               }
             }}
           />
         </div>
+        {selectedSessions.size > 0 && (
+          <div className="chat-history-bulkbar">
+            <span>{selectedSessions.size} selected</span>
+            <div style={{ flex: 1 }} />
+            <button className="ghost" onClick={() => setSelectedSessions(new Set())}>Clear</button>
+            <button className="danger-link" onClick={bulkDelete}>
+              <Trash2 size={12} /> Delete
+            </button>
+          </div>
+        )}
         <div className="chat-history-list">
-          {historyFiltered.map((s, i) => (
-            <div key={s.id} className={`chat-history-item ${sessionId === s.id ? 'active' : ''} ${historyIdx === i ? 'highlighted' : ''}`} onClick={() => loadSession(s.id)}>
+          {historyFiltered.map((s, i) => {
+            const isSelected = selectedSessions.has(s.id);
+            const isPreview = previewSessionId === s.id;
+            return (
+            <div
+              key={s.id}
+              className={`chat-history-item ${sessionId === s.id ? 'active' : ''} ${historyIdx === i ? 'highlighted' : ''} ${isSelected ? 'multi-selected' : ''} ${isPreview ? 'previewing' : ''}`}
+              onClick={(e) => {
+                if (e.ctrlKey || e.metaKey) {
+                  setSelectedSessions(prev => {
+                    const next = new Set(prev);
+                    if (next.has(s.id)) next.delete(s.id); else next.add(s.id);
+                    return next;
+                  });
+                } else if (e.shiftKey && selectedSessions.size > 0) {
+                  // range select from last selected to this one
+                  const ids = historyFiltered.map(x => x.id);
+                  const lastIdx = ids.findIndex(id => selectedSessions.has(id));
+                  const [from, to] = [Math.min(lastIdx, i), Math.max(lastIdx, i)];
+                  setSelectedSessions(new Set(ids.slice(from, to + 1)));
+                } else {
+                  setPreviewSessionId(s.id);
+                  setSelectedSessions(new Set());
+                }
+              }}
+              onDoubleClick={() => loadSession(s.id)}
+            >
+              <input
+                type="checkbox"
+                className="chat-history-check"
+                checked={isSelected}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  setSelectedSessions(prev => {
+                    const next = new Set(prev);
+                    if (e.target.checked) next.add(s.id); else next.delete(s.id);
+                    return next;
+                  });
+                }}
+              />
               <div className="flex-1" style={{ minWidth: 0 }}>
                 <div className="truncate" style={{ fontSize: 12, fontWeight: 500 }}>{s.title}</div>
                 <div className="text-xs text-muted">{new Date(s.updatedAt).toLocaleString()}</div>
               </div>
-              <button className="ghost" onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(s.id); }}>
+              <button className="ghost" onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(s.id); }} title="Delete this chat">
                 <Trash2 size={12} />
               </button>
             </div>
-          ))}
+            );
+          })}
           {historyFiltered.length === 0 && (
             <div className="empty-inline">
               {historyFilter ? 'No matches' : 'No chat history yet'}
             </div>
           )}
         </div>
+        {previewSessionId && (
+          <div className="chat-history-preview">
+            <div className="chat-history-preview-header">
+              <span>Preview</span>
+              <button className="ghost" onClick={() => loadSession(previewSessionId)} title="Open this chat">Open →</button>
+            </div>
+            <div className="chat-history-preview-body">
+              {!previewData && <div className="text-xs text-muted">Loading…</div>}
+              {previewData && previewData.messages.slice(0, 6).map((m, i) => (
+                <div key={i} className={`chat-history-preview-msg ${m.role}`}>
+                  <div className="chat-history-preview-role">{m.role}</div>
+                  <div className="chat-history-preview-content">{(m.content || '').slice(0, 200)}{(m.content || '').length > 200 ? '…' : ''}</div>
+                </div>
+              ))}
+              {previewData && previewData.messages.length === 0 && (
+                <div className="text-xs text-muted">Empty chat</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Mini toolbar */}
