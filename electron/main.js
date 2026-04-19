@@ -393,6 +393,9 @@ function watchNotifications() {
                   `).catch(() => {});
                 });
                 notif.show();
+                // Force the window to the front so the in-app bubble (with
+                // Join Meeting button + agenda links) is actually visible.
+                popUp();
               }
             } catch {}
             eventType = '';
