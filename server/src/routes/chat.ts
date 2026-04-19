@@ -3,7 +3,7 @@ import { askWorkIQ } from '../services/workiq';
 import {
   isAuthenticated, getGitHubToken,
   startDeviceCodeAuth, pollForToken,
-  chatCompletion, chatCompletionStream,
+  chatCompletion, chatCompletionStream, chatCompletionStreamed,
   getModels,
 } from '../services/copilot';
 import { execSync } from 'child_process';
@@ -768,27 +768,33 @@ router.post('/stream', async (req: Request, res: Response) => {
 
     sendStatus(`Asking ${pass1Model}...`);
 
-    // Pass 1: get AI response (may contain ACTION blocks)
-    let rawReply: string;
+    // Pass 1: get AI response (may contain ACTION blocks).
+    // Stream tokens to the client as they arrive so first-token latency
+    // matches what the model is actually doing — no fake word-split delay.
+    let rawReply: string = '';
+    let streamedToClient = false;
+    const onChunk = (text: string) => {
+      streamedToClient = true;
+      if (!res.writableEnded) res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+    };
     try {
-      rawReply = await chatCompletion(fullMessages, pass1Model);
+      rawReply = await chatCompletionStreamed(fullMessages, pass1Model, onChunk);
     } catch (err: any) {
       if (pass1Model !== 'gpt-4o') {
         sendStatus(`${pass1Model} failed, trying gpt-4o...`);
-        rawReply = await chatCompletion(fullMessages, 'gpt-4o');
+        // If we already started streaming, wipe what's there before fallback.
+        if (streamedToClient && !res.writableEnded) {
+          res.write(`data: ${JSON.stringify({ replace: '' })}\n\n`);
+        }
+        rawReply = await chatCompletionStreamed(fullMessages, 'gpt-4o', onChunk);
       } else {
         throw err;
       }
     }
     console.log('[Chat] Raw AI reply:', rawReply.substring(0, 500));
 
-    // For simple messages, skip action processing — just return the text
+    // For simple messages, skip action processing — just finalize.
     if (isSimpleMessage) {
-      const words = rawReply.split(' ');
-      for (let i = 0; i < words.length; i++) {
-        const chunk = (i === 0 ? '' : ' ') + words[i];
-        if (!res.writableEnded) res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
-      }
       res.write('data: [DONE]\n\n');
       res.end();
       clearTimeout(hardTimeout);
@@ -797,6 +803,11 @@ router.post('/stream', async (req: Request, res: Response) => {
 
     sendStatus('Processing response...');
     let { cleanedResponse, actions } = await processActions(rawReply);
+    // If we found ACTION blocks, replace the streamed text with the cleaned
+    // version (without the ```ACTION fences) so the user doesn't see them.
+    if (actions.length > 0 && streamedToClient && !res.writableEnded) {
+      res.write(`data: ${JSON.stringify({ replace: cleanedResponse })}\n\n`);
+    }
     console.log('[Chat] Actions found:', actions.length, actions.map(a => a.type));
     if (actions.length > 0) {
       sendStatus(`Executed ${actions.length} action(s): ${actions.map(a => `${a.type}${a.result?.success ? ' ✓' : ' ✗'}`).join(', ')}`);
@@ -944,11 +955,12 @@ router.post('/stream', async (req: Request, res: Response) => {
       finalReply = finalReply.substring(0, 8000) + '\n\n...(truncated)';
     }
 
-    // Send the complete response as streamed chunks (simulated)
-    const words = finalReply.split(' ');
-    for (let i = 0; i < words.length; i++) {
-      const chunk = (i === 0 ? '' : ' ') + words[i];
-      if (!res.writableEnded) res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+    // We already live-streamed rawReply. If the final reply differs (because
+    // we ran a pass-2 summarizer or appended action results), replace what's
+    // on the client with the full final text. Otherwise just close.
+    const needsReplace = finalReply.trim() !== rawReply.trim();
+    if (needsReplace && !res.writableEnded) {
+      res.write(`data: ${JSON.stringify({ replace: finalReply })}\n\n`);
     }
 
     if (actions.length > 0) {

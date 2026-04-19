@@ -217,7 +217,45 @@ export async function chatCompletion(
   return data.choices?.[0]?.message?.content || '';
 }
 
-// --- Streaming chat completion ---
+// Streaming helper: forwards content chunks to onChunk and returns the full text.
+export async function chatCompletionStreamed(
+  messages: ChatMessage[],
+  model: string = 'gpt-4o',
+  onChunk: (text: string) => void,
+  temperature: number = 0.7,
+): Promise<string> {
+  const stream = await chatCompletionStream(messages, model, temperature);
+  if (!stream) throw new Error('No stream returned from Copilot');
+
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let idx;
+    while ((idx = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 1);
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (payload === '[DONE]') return full;
+      try {
+        const parsed = JSON.parse(payload);
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          full += delta;
+          onChunk(delta);
+        }
+      } catch { /* ignore non-JSON keepalives */ }
+    }
+  }
+  return full;
+}
 
 export async function chatCompletionStream(
   messages: ChatMessage[],
