@@ -586,17 +586,18 @@ button.ghost:hover { background: var(--bg-hover); color: var(--text-primary); tr
   justify-content: center;
   width: 24px;
   height: 24px;
+  padding: 0;
   border: none;
   border-radius: 50%;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   flex-shrink: 0;
-  transition: color 0.15s;
+  transition: color 0.15s, transform 0.15s;
 }
-.task-row-check:hover { color: var(--accent); }
+.task-row-check:hover { color: var(--accent); transform: scale(1.1); }
 .task-row-check.checked { color: var(--accent); }
-.task-row-check svg { display: block; }
+.task-row-check svg { display: block; stroke: currentColor; }
 
 .task-row-title {
   flex: 1;
