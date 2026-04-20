@@ -13,11 +13,17 @@ interface SourceRef {
   items?: any[];
 }
 
+interface ThinkingStep {
+  text: string;
+  atMs: number; // ms since stream start when this status arrived
+  durMs?: number; // ms this step took (set when next step arrives or stream ends)
+}
+
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: string;
-  thinking?: string[];
+  thinking?: ThinkingStep[];
   sources?: SourceRef[];
 }
 
@@ -495,8 +501,15 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
 
       const decoder = new TextDecoder();
       let assistantMsg = '';
-      const thinkingTrace: string[] = [];
+      const thinkingTrace: ThinkingStep[] = [];
       const sourcesList: SourceRef[] = [];
+      const streamStart = Date.now();
+      const stampThinking = () => thinkingTrace.map((s, idx) => ({
+        ...s,
+        durMs: idx < thinkingTrace.length - 1
+          ? thinkingTrace[idx + 1].atMs - s.atMs
+          : Date.now() - streamStart - s.atMs,
+      }));
 
       while (true) {
         const { done, value } = await reader.read();
@@ -513,7 +526,9 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
               const parsed = JSON.parse(data);
               if (parsed.status) {
                 // Capture status into thinking trace + show as live indicator
-                if (!thinkingTrace.includes(parsed.status)) thinkingTrace.push(parsed.status);
+                if (!thinkingTrace.find(t => t.text === parsed.status)) {
+                  thinkingTrace.push({ text: parsed.status, atMs: Date.now() - streamStart });
+                }
                 setMessages(prev => {
                   const copy = [...prev];
                   copy[copy.length - 1] = { role: 'assistant', content: `:::status:::${parsed.status}`, timestamp: new Date().toISOString() };
@@ -537,7 +552,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
                 assistantMsg += parsed.content;
                 setMessages(prev => {
                   const copy = [...prev];
-                  copy[copy.length - 1] = { role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString(), thinking: thinkingTrace.length ? [...thinkingTrace] : undefined, sources: sourcesList.length ? [...sourcesList] : undefined };
+                  copy[copy.length - 1] = { role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString(), thinking: thinkingTrace.length ? stampThinking() : undefined, sources: sourcesList.length ? [...sourcesList] : undefined };
                   return copy;
                 });
               }
@@ -558,7 +573,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
                 assistantMsg = parsed.replace;
                 setMessages(prev => {
                   const copy = [...prev];
-                  copy[copy.length - 1] = { role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString(), thinking: thinkingTrace.length ? [...thinkingTrace] : undefined };
+                  copy[copy.length - 1] = { role: 'assistant', content: assistantMsg, timestamp: new Date().toISOString(), thinking: thinkingTrace.length ? stampThinking() : undefined };
                   return copy;
                 });
               }
@@ -1051,9 +1066,23 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
                       </button>
                       {openThinking.has(i) && (
                         <ol className="chat-thinking-list">
-                          {msg.thinking.map((step, k) => (
-                            <li key={k}>{step}</li>
-                          ))}
+                          {msg.thinking.map((step, k) => {
+                            const sec = step.durMs != null ? (step.durMs / 1000).toFixed(step.durMs < 1000 ? 2 : 1) : null;
+                            return (
+                              <li key={k}>
+                                <span>{step.text}</span>
+                                {sec && <span className="chat-thinking-time">{sec}s</span>}
+                              </li>
+                            );
+                          })}
+                          {msg.thinking.length > 0 && (
+                            <li className="chat-thinking-total">
+                              <span>Total</span>
+                              <span className="chat-thinking-time">
+                                {(msg.thinking.reduce((a, s) => a + (s.durMs || 0), 0) / 1000).toFixed(1)}s
+                              </span>
+                            </li>
+                          )}
                         </ol>
                       )}
                     </div>

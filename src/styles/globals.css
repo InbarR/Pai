@@ -3166,7 +3166,35 @@ label.checkbox input[type="checkbox"] {
   line-height: 1.6;
   list-style: decimal;
 }
-.chat-thinking-list li { margin-bottom: 2px; }
+.chat-thinking-list li {
+  margin-bottom: 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.chat-thinking-list li > span:first-child { flex: 1; min-width: 0; }
+.chat-thinking-time {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+.chat-thinking-list li.chat-thinking-total {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-subtle);
+  font-weight: 600;
+  color: var(--text-primary);
+  list-style: none;
+  margin-left: -22px;
+}
+.chat-thinking-list li.chat-thinking-total .chat-thinking-time {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 
 .chat-sources {
   display: flex;
