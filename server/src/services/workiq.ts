@@ -70,7 +70,7 @@ function startMcp(): Promise<void> {
         console.log('[WorkIQ] MCP initialized');
         // Accept EULA automatically
         const eulaId = ++requestId;
-        const eulaMsg = JSON.stringify({ jsonrpc: '2.0', id: eulaId, method: 'tools/call', params: { name: 'accept_eula', arguments: {} } });
+        const eulaMsg = JSON.stringify({ jsonrpc: '2.0', id: eulaId, method: 'tools/call', params: { name: 'accept_eula', arguments: { eulaUrl: 'https://github.com/microsoft/work-iq' } } });
         pendingRequests.set(eulaId, {
           resolve: () => console.log('[WorkIQ] EULA accepted'),
           reject: () => console.log('[WorkIQ] EULA accept failed (may already be accepted)'),
@@ -126,7 +126,7 @@ function callTool(name: string, args: Record<string, any>): Promise<any> {
 
 export async function askWorkIQ(query: string): Promise<string> {
   try {
-    const result = await callTool('ask_work_iq', { query });
+    const result = await callTool('ask_work_iq', { question: query });
     console.log('[WorkIQ] Raw result:', JSON.stringify(result).substring(0, 500));
     // MCP tool results are in content array
     if (result?.content && Array.isArray(result.content)) {
