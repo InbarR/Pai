@@ -4,6 +4,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { Send, Sparkles, LogIn, Loader2, Plus, History, Trash2, ArrowLeft, Square, Copy, X, Mic, MicOff, Maximize2, Menu, Brain, Database } from 'lucide-react';
 import BrianMascot from './BrianMascot';
+import {
+  loadCustomPrompts,
+  subscribeCustomPrompts,
+  findCustomPrompt,
+  expandPrompt,
+  CustomPrompt,
+} from '../../lib/customPrompts';
 
 interface SourceRef {
   label: string;
@@ -66,6 +73,8 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
   });
   const [input, setInput] = useState('');
   const [slashIdx, setSlashIdx] = useState(0);
+  const [customPrompts, setCustomPrompts] = useState<CustomPrompt[]>(() => loadCustomPrompts());
+  useEffect(() => subscribeCustomPrompts(() => setCustomPrompts(loadCustomPrompts())), []);
   const [pastedImages, setPastedImages] = useState<{ data: string; name: string }[]>([]);
   const [suggestions] = useState(() => pickRandom(ALL_SUGGESTIONS, 3));
   const [streaming, setStreaming] = useState(false);
@@ -82,6 +91,59 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
   const [modelOpen, setModelOpen] = useState(false);
   const [modelFilter, setModelFilter] = useState('');
   const modelRef = useRef<HTMLDivElement>(null);
+
+  // Chat text zoom (Ctrl +/- and Ctrl+wheel). Persisted across sessions.
+  const ZOOM_MIN = 0.7, ZOOM_MAX = 2.0, ZOOM_STEP = 0.1;
+  const clampZoom = (z: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(z * 10) / 10));
+  const [zoom, setZoomState] = useState<number>(() => {
+    const saved = parseFloat(localStorage.getItem('brian-chat-zoom') || '');
+    return Number.isFinite(saved) ? clampZoom(saved) : 1;
+  });
+  const setZoom = (z: number) => {
+    const v = clampZoom(z);
+    setZoomState(v);
+    localStorage.setItem('brian-chat-zoom', String(v));
+    document.documentElement.style.setProperty('--chat-zoom', String(v));
+  };
+  const [zoomToast, setZoomToast] = useState<string | null>(null);
+  const zoomToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashZoom = (z: number) => {
+    setZoomToast(`${Math.round(z * 100)}%`);
+    if (zoomToastTimer.current) clearTimeout(zoomToastTimer.current);
+    zoomToastTimer.current = setTimeout(() => setZoomToast(null), 900);
+  };
+
+  // Ctrl +/- / 0 keyboard handlers, scoped to when the chat panel is mounted.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      // "+" lives on multiple keys depending on layout; check both code & key.
+      const isPlus = e.key === '+' || e.key === '=' || e.code === 'NumpadAdd';
+      const isMinus = e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract';
+      const isZero = e.key === '0' || e.code === 'Numpad0' || e.code === 'Digit0';
+      if (!isPlus && !isMinus && !isZero) return;
+      e.preventDefault();
+      setZoomState(prev => {
+        const next = isZero ? 1 : clampZoom(prev + (isPlus ? ZOOM_STEP : -ZOOM_STEP));
+        localStorage.setItem('brian-chat-zoom', String(next));
+        document.documentElement.style.setProperty('--chat-zoom', String(next));
+        flashZoom(next);
+        return next;
+      });
+    };
+    window.addEventListener('keydown', onKey);
+    const onFontChanged = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { sizePercent?: number } | undefined;
+      if (detail && Number.isFinite(detail.sizePercent)) {
+        setZoomState(clampZoom((detail.sizePercent as number) / 100));
+      }
+    };
+    window.addEventListener('brian:font-changed', onFontChanged as EventListener);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('brian:font-changed', onFontChanged as EventListener);
+    };
+  }, []);
 
   const { data: availableModels = [] } = useQuery({
     queryKey: ['chat-models'],
@@ -419,8 +481,8 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
     setMessages(prev => prev.filter(m => m.content !== ':::thinking:::' && !m.content.startsWith(':::status:::')));
   };
 
-  const sendMessage = async () => {
-    const text = input.trim();
+  const sendMessage = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text && pastedImages.length === 0) return;
 
     // If already streaming, stop it first
@@ -623,7 +685,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
     }
   };
 
-  const SLASH_COMMANDS = [
+  const BUILTIN_SLASH_COMMANDS = [
     { cmd: '/add task', placeholder: '/add task ', desc: 'Add a new task' },
     { cmd: '/add note', placeholder: '/add note ', desc: 'Add a new note' },
     { cmd: '/add reminder', placeholder: '/add reminder ', desc: 'Add a reminder' },
@@ -637,6 +699,16 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
     { cmd: '/scan files', placeholder: '/scan files', desc: 'Rescan open & recent files' },
   ];
 
+  const SLASH_COMMANDS = [
+    ...customPrompts.map(p => ({
+      cmd: p.cmd,
+      placeholder: p.prompt.includes('{args}') ? `${p.cmd} ` : p.cmd,
+      desc: p.desc || 'Custom prompt',
+      custom: true as const,
+    })),
+    ...BUILTIN_SLASH_COMMANDS,
+  ];
+
   const slashMatch = input.match(/^(\/\S*)/);
   const slashFilter = slashMatch ? slashMatch[1].toLowerCase() : '';
   const slashVisible = input.startsWith('/') && !input.includes(' ');
@@ -646,6 +718,16 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
 
   const handleSlashCommand = (text: string): boolean => {
     const t = text.trim();
+
+    // Custom user-defined prompts: expand the prompt template, set as input,
+    // and send it as a normal chat message.
+    const custom = findCustomPrompt(t, customPrompts);
+    if (custom) {
+      const expanded = expandPrompt(custom.prompt, custom.args);
+      setInput('');
+      sendMessage(expanded);
+      return true;
+    }
 
     const addTask = t.match(/^\/add\s+task\s+(.+)/i);
     if (addTask) {
@@ -735,7 +817,19 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
     : sessions;
 
   return (
-    <div className="chat-panel" ref={panelRef}>
+    <div
+      className="chat-panel"
+      ref={panelRef}
+      onWheel={(e) => {
+        if (!(e.ctrlKey || e.metaKey)) return;
+        e.preventDefault();
+        const dir = e.deltaY < 0 ? 1 : -1;
+        const next = clampZoom(zoom + dir * ZOOM_STEP);
+        setZoom(next);
+        flashZoom(next);
+      }}
+    >
+      {zoomToast && <div className="chat-zoom-toast">{zoomToast}</div>}
       {/* History side panel */}
       <div className={`chat-history-panel ${showHistory ? 'open' : ''}`}>
         <div className="chat-history-header">
@@ -1127,7 +1221,10 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
               onMouseDown={e => { e.preventDefault(); setInput(c.placeholder); inputRef.current?.focus(); }}
             >
               <span className="slash-item-cmd">{c.cmd}</span>
-              <span className="slash-item-desc">{c.desc}</span>
+              <span className="slash-item-desc">
+                {(c as any).custom && <span className="slash-item-badge">custom</span>}
+                {c.desc}
+              </span>
             </div>
           ))}
         </div>
@@ -1194,7 +1291,7 @@ export default function ChatPanel({ onChatFullscreen }: { onChatFullscreen?: () 
           </button>
         ) : (
           <button
-            onClick={sendMessage}
+            onClick={() => sendMessage()}
             disabled={!input.trim() || !authenticated}
             className="chat-send"
           >
