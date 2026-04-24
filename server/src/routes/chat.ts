@@ -20,12 +20,18 @@ const router = Router();
 const BRIDGE_PATH = path.join(__dirname, '../../../tools/outlook-bridge/bin/Release/net48/outlook-bridge.exe');
 
 function runBridge(args: string): any {
+  const cmd = args.split(' ')[0];
   try {
     const result = execSync(`"${BRIDGE_PATH}" ${args}`, {
       encoding: 'utf-8', timeout: 30_000, windowsHide: true,
     });
     return JSON.parse(result.trim());
-  } catch { return []; }
+  } catch (err: any) {
+    const stderr = err?.stderr ? String(err.stderr).trim() : '';
+    const detail = stderr || err?.message || 'unknown error';
+    console.error(`[Chat] Outlook bridge failed (${cmd}):`, detail);
+    throw new Error(`Outlook bridge unavailable (${cmd}): ${detail.substring(0, 200)}`);
+  }
 }
 
 // Build context about the user's current state to inject into the system prompt
@@ -396,6 +402,11 @@ function formatFallbackData(cleanedResponse: string, readResults: any[]): string
   const parts: string[] = [];
   for (const a of readResults) {
     if (!a.result?.data || !Array.isArray(a.result.data)) continue;
+    // Empty result set — use the action's own message (e.g. "Found 0 emails matching 'Hari'.")
+    if (a.result.data.length === 0) {
+      if (a.result.message) parts.push(a.result.message);
+      continue;
+    }
     if (a.type === 'get_calendar_today' || a.type === 'get_calendar_upcoming') {
       const lines = a.result.data.map((e: any) => {
         const d = new Date(e.start);
@@ -557,10 +568,10 @@ router.post('/transcribe', async (req: Request, res: Response) => {
 
 // Also keep the stream endpoint for simple non-action messages
 router.post('/stream', async (req: Request, res: Response) => {
-  // Hard timeout — if anything takes longer than 45s, end the response
+  // Hard timeout — if anything takes longer than 90s, end the response
   const hardTimeout = setTimeout(() => {
     if (!res.writableEnded) {
-      console.log('[Chat] Hard timeout hit (45s)');
+      console.log('[Chat] Hard timeout hit (90s)');
       if (res.headersSent) {
         res.write(`data: ${JSON.stringify({ content: '\n\n(Timed out — try again or rephrase)' })}\n\n`);
         res.write('data: [DONE]\n\n');
@@ -569,7 +580,7 @@ router.post('/stream', async (req: Request, res: Response) => {
         res.status(504).json({ error: 'Request timed out' });
       }
     }
-  }, 30000);
+  }, 90000);
 
   try {
     const { messages, model = 'gpt-4o' } = req.body;
@@ -579,8 +590,10 @@ router.post('/stream', async (req: Request, res: Response) => {
     const lastUserText = typeof lastUserMsg?.content === 'string' ? lastUserMsg.content : '';
     const isDraftMode = /^dm\b|^draft\b|write (?:a |an |the )?(?:mail|email)|rephrase|phrase (?:a |an |the )?(?:mail|email)|summariz\w* (?:as |the |a )?(?:mail|email|meeting)/i.test(lastUserText.trim());
 
-    // Determine simple vs action message early (before it's used)
-    const actionKeywords = /schedul|meeting|email|mail|calendar|remind|task|note|search|find|assign|ado|draft|dm\b|budget|send|read|what.*on my|who|attach|workiq/i;
+    // Determine simple vs action message early (before it's used).
+    // "from" covers follow-ups like "from Hari Pulapaka" that refer to a sender;
+    // without it those get the tool-less simple prompt and the model says "I don't have access".
+    const actionKeywords = /schedul|meeting|email|mail|calendar|remind|task|note|search|find|assign|ado|draft|dm\b|budget|send|sent|received|read|what.*on my|who|attach|workiq|\bfrom\s+\S|\babout\s+\S/i;
     const isSimpleMessage = !isDraftMode && lastUserText.length < 100 && !actionKeywords.test(lastUserText);
 
     // Start streaming immediately so user sees progress
@@ -881,8 +894,31 @@ router.post('/stream', async (req: Request, res: Response) => {
       sendStatus(`Running: ${actions.map(a => a.type.replace(/_/g, ' ')).join(', ')}...`);
     }
 
-    // Check if any READ actions returned data — do a second pass
-    const readResults = actions.filter(a => a.result?.data && Array.isArray(a.result.data) && a.result.data.length > 0);
+    // WorkIQ fallback: the local Outlook bridge only indexes recent mail, so a
+    // 0-result search_emails doesn't mean the sender/topic isn't in M365. Retry
+    // via WorkIQ (Graph-backed) so we can still answer when the local index misses.
+    const emptySearches = actions.filter(a =>
+      a.type === 'search_emails' && a.result?.success && Array.isArray(a.result.data) && a.result.data.length === 0 && a.query
+    );
+    for (const a of emptySearches) {
+      sendStatus(`No local hits for "${a.query}" — asking WorkIQ...`);
+      try {
+        const workiqResult = await executeAction({
+          type: 'ask_workiq',
+          query: `Find recent emails from or about ${a.query}. Summarize the most recent one.`,
+        });
+        if (workiqResult?.success) {
+          actions.push({ type: 'ask_workiq', query: a.query, result: workiqResult });
+        }
+      } catch (err: any) {
+        console.log('[Chat] WorkIQ fallback failed:', err.message);
+      }
+    }
+
+    // Any READ action with a data array (even empty) triggers Pass 2 so the
+    // model can write a natural response for both hits and misses — e.g.
+    // "No emails from Hari in your inbox" rather than a bare "Found 0 emails".
+    const readResults = actions.filter(a => a.result?.data && Array.isArray(a.result.data));
     let finalReply = cleanedResponse;
 
     if (readResults.length > 0) {
@@ -898,7 +934,7 @@ router.post('/stream', async (req: Request, res: Response) => {
       // Pass 2: Use gpt-4o always (faster) with a minimal prompt — just summarize results
       const lastUserContent = messages.filter((m: any) => m.role === 'user').slice(-1);
       const pass2Messages = [
-        { role: 'system', content: 'You summarize data results concisely for the user. No ACTION blocks. Match the user\'s language.' },
+        { role: 'system', content: 'You summarize data results concisely for the user. No ACTION blocks. Match the user\'s language. If the results are empty, tell the user plainly that nothing was found for what they asked — do not just say "done".' },
         ...lastUserContent,
         { role: 'user', content: `Summarize these results:\n${dataContext}` },
       ];
@@ -920,16 +956,21 @@ router.post('/stream', async (req: Request, res: Response) => {
       const actionSummary = actions.map(a => a.result?.message || `${a.type}: done`).join('\n');
       sendStatus(actionSummary);
 
+      const isDeadEnd = /let me|i'll|one moment|i'm searching|i need to/i.test(finalReply || '');
       if (hasUsefulResults) {
-        // Actions found something — include results
-        const isDeadEnd = /let me|i'll|one moment|i'm searching|i need to/i.test(finalReply || '');
         if (!finalReply.trim() || isDeadEnd) {
           finalReply = actionSummary;
         } else {
           finalReply = finalReply.trim() + '\n\n' + actionSummary;
         }
+      } else if (!finalReply.trim() || isDeadEnd) {
+        // Actions ran but returned no useful data (e.g. search found 0 results).
+        // The AI's pre-action text was empty or a dead-end ("Let me check..."),
+        // so surface the action's own message instead of falling through to a
+        // generic "Done!" that leaves the user guessing what happened.
+        finalReply = actionSummary;
       }
-      // If no useful results, keep the AI's original conversational response
+      // Otherwise, keep the AI's conversational response
     }
 
     // Always append write action results (draft_mail, schedule_meeting, etc.) that have meaningful messages
@@ -978,15 +1019,40 @@ router.post('/stream', async (req: Request, res: Response) => {
     }
   } catch (err: any) {
     clearTimeout(hardTimeout);
+    const friendly = friendlyChatError(err);
     if (!res.headersSent) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: friendly });
     } else if (!res.writableEnded) {
-      res.write(`data: ${JSON.stringify({ content: `\n\nError: ${err.message}` })}\n\n`);
+      res.write(`data: ${JSON.stringify({ content: `\n\n${friendly}` })}\n\n`);
       res.write('data: [DONE]\n\n');
       res.end();
     }
   }
 });
+
+function friendlyChatError(err: any): string {
+  const raw = String(err?.message || err || '').toLowerCase();
+  const code = String(err?.code || err?.cause?.code || '').toUpperCase();
+  if (raw.includes('fetch failed') || code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'ECONNRESET' || raw.includes('network')) {
+    return "I couldn't reach the AI service — looks like a network hiccup. Check your connection and try again.";
+  }
+  if (raw.includes('timeout') || raw.includes('timed out') || code === 'ETIMEDOUT' || code === 'UND_ERR_CONNECT_TIMEOUT') {
+    return "The AI service took too long to respond. Please try again.";
+  }
+  if (raw.includes('401') || raw.includes('unauthorized') || raw.includes('not authenticated')) {
+    return "Your GitHub Copilot session expired. Sign in again to continue.";
+  }
+  if (raw.includes('403') || raw.includes('forbidden')) {
+    return "The AI service refused the request (403). This can happen if your Copilot plan doesn't include the selected model.";
+  }
+  if (raw.includes('429') || raw.includes('rate limit') || raw.includes('too many requests')) {
+    return "Rate limit hit — give it a moment and try again.";
+  }
+  if (raw.includes('500') || raw.includes('502') || raw.includes('503') || raw.includes('504') || raw.includes('bad gateway') || raw.includes('service unavailable')) {
+    return "The AI service is having trouble right now. Please try again in a moment.";
+  }
+  return `Something went wrong: ${err?.message || 'unknown error'}. Please try again.`;
+}
 
 // --- Assistant settings endpoints ---
 router.get('/assistant-settings', (req, res) => {

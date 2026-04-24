@@ -58,7 +58,7 @@ function startMcp(): Promise<void> {
       params: {
         protocolVersion: '2024-11-05',
         capabilities: {},
-        clientInfo: { name: 'pai', version: '1.0.0' },
+        clientInfo: { name: 'brian', version: '1.0.0' },
       },
     });
 
@@ -114,13 +114,13 @@ function callTool(name: string, args: Record<string, any>): Promise<any> {
     pendingRequests.set(id, { resolve, reject });
     mcpProcess.stdin.write(msg + '\n');
 
-    // 20s timeout
+    // 60s timeout
     setTimeout(() => {
       if (pendingRequests.has(id)) {
         pendingRequests.delete(id);
         reject(new Error('WorkIQ tool call timeout'));
       }
-    }, 20000);
+    }, 60000);
   });
 }
 
