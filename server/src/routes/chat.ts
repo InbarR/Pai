@@ -909,9 +909,13 @@ router.post('/stream', async (req: Request, res: Response) => {
         });
         if (workiqResult?.success) {
           actions.push({ type: 'ask_workiq', query: a.query, result: workiqResult });
+          const raw = (workiqResult.message || '').toString();
+          const snippet = raw.length > 400 ? raw.slice(0, 400) + '…' : raw;
+          sendStatus(`WorkIQ said: ${snippet}`);
         }
       } catch (err: any) {
         console.log('[Chat] WorkIQ fallback failed:', err.message);
+        sendStatus(`WorkIQ error: ${err.message}`);
       }
     }
 
