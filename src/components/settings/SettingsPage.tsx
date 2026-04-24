@@ -229,14 +229,14 @@ export default function SettingsPage() {
           <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: 0.5, marginBottom: 8 }}>
             PREVIEW
           </div>
-          <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>
+          <div style={{ fontWeight: 700, fontSize: 18 * (fontSizePercent / 100), marginBottom: 6 }}>
             Hi, I'm Brian — your second brain.
           </div>
-          <div style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>
+          <div style={{ fontSize: 14 * (fontSizePercent / 100), color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 8 }}>
             The quick brown fox jumps over the lazy dog. <strong>Bold text</strong>,{' '}
             <em>italic text</em>, and <code className="inline-code">inline code</code> sample.
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: 12 * (fontSizePercent / 100), color: 'var(--text-muted)' }}>
             1234567890 &middot; abcdefghijklmnopqrstuvwxyz &middot; ABCDEFGHIJKLMNOPQRSTUVWXYZ
           </div>
         </div>
